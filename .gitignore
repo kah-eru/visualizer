@@ -1,0 +1,5 @@
+# Dependencies (app uses CDN scripts; node_modules is not needed at runtime)
+node_modules/
+
+# Local backup artifact (history is in git)
+index.html.bak
