@@ -5,9 +5,15 @@
    feed / minimap code is kept together here on purpose — it shares mutable state
    and dozens of cross-calls; splitting it further buys little and risks regressions.
    ========================================================================== */
-import Chart from "chart.js/auto";
+// Register only the Chart.js pieces this app uses (one line chart on linear axes) instead of
+// chart.js/auto, which pulls in every controller/scale/element and bloats the initial bundle.
+import {
+  Chart, LineController, LineElement, PointElement, LinearScale, Tooltip,
+} from "chart.js";
+Chart.register(LineController, LineElement, PointElement, LinearScale, Tooltip);
 import Papa from "papaparse";
-import html2pdf from "html2pdf.js";
+// html2pdf (jsPDF + html2canvas + DOMPurify) is heavy and only needed when the user exports a PDF,
+// so it's loaded on demand via dynamic import() in the PDF handler — not in the initial bundle.
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
   GPM_TO_LPM, PSI_TO_KPA, FLOW_KEYS, PRESSURE_KEYS, FEED_CAP,
@@ -20,6 +26,7 @@ let allEvents = [];     // full parsed dataset
 let filtered = [];      // current filtered subset
 let hydroChart = null;  // Chart.js line chart (hydraulic overlay + shared time axis)
 let hydroDirty = true;  // rebuild chart datasets only when `filtered` changes (else just move the x-axis)
+let miniDensityDirty = true; // repaint the minimap histogram only when `filtered` changes (not on view-only moves)
 let viewSpan = 0;       // current view width (ms), used by the chart tick/tooltip time formatting
 let flowOn = false;     // show the hydraulic flow/pressure lines on the main timeline (off by default)
 let eventTlOn = false;  // show the separate Interventions & Alerts timeline (off by default)
@@ -367,6 +374,7 @@ function applyFilters() {
   globalEndCached = filtered.length ? filtered.reduce((m, e) => Math.max(m, e.ts.getTime()), 0) + 1 : dataMaxT + 1;
 
   hydroDirty = true; // data/filter changed → chart datasets + minimap density need a full rebuild
+  miniDensityDirty = true;
   render();
 }
 
@@ -681,6 +689,13 @@ function renderSwimlane(range, attempt) {
   const mainRuns = showMainlines ? runIntervals("mainline").filter(inWin) : [];
   $("statRuns").textContent = (progRuns.length + zoneRuns.length + mainRuns.length).toLocaleString();
 
+  // index runs by key once (instead of re-filtering the whole array per key in the loops below)
+  const byKey = runs => { const m = new Map(); for (const iv of runs) (m.get(iv.key) || m.set(iv.key, []).get(iv.key)).push(iv); return m; };
+  const mainByKey = byKey(mainRuns);
+  const progByKey = byKey(progRuns);
+  const zoneByKey = byKey(zoneRuns);
+  const zoneAllByKey = byKey(zoneRunsAll);
+
   let html = "";
   // Mainlines (top — sits just above the hydraulic chart for flow/pressure correlation)
   if (showMainlines) {
@@ -689,7 +704,7 @@ function renderSwimlane(range, attempt) {
     if (!mKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected mainline runs in view.</div>`;
     for (const k of mKeys) {
       const col = categoryColor("Mainline " + k);
-      const bars = mainRuns.filter(iv => iv.key === k).map(iv => barHTML(iv, xOf, range, "Mainline", col)).join("");
+      const bars = (mainByKey.get(k) || []).map(iv => barHTML(iv, xOf, range, "Mainline", col)).join("");
       html += track(`<span style="color:#cbd5e1;${lblBase}" title="Mainline ${escapeHtml(k)}">${swatch(col)}ML${escapeHtml(k)}</span>`, bars);
     }
   }
@@ -699,7 +714,7 @@ function renderSwimlane(range, attempt) {
     const pKeys = sortedKeys(progRuns).filter(k => laneSel.program.has(k));
     if (!pKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected program runs in view.</div>`;
     for (const k of pKeys) {
-      const bars = progRuns.filter(iv => iv.key === k).map(iv => barHTML(iv, xOf, range, "Program")).join("");
+      const bars = (progByKey.get(k) || []).map(iv => barHTML(iv, xOf, range, "Program")).join("");
       const expanded = expandedPrograms.has(k);
       const lbl = `<span class="lane-label" data-prog="${escapeHtml(k)}" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Click to ${expanded ? "hide" : "show"} zones in Program ${escapeHtml(k)}">${expanded ? "▾" : "▸"} P${escapeHtml(k)}</span>`;
       html += track(lbl, bars);
@@ -708,7 +723,7 @@ function renderSwimlane(range, attempt) {
         if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1" style="padding-left:${lblW + 6}px">No zone runs recorded for this program in view.</div>`;
         for (const z of zKeys) {
           const col = zoneColor(z);
-          const zbars = zoneRunsAll.filter(zz => zz.key === z && String(zz.program) === String(k)).map(iv => barHTML(iv, xOf, range, "Zone", col)).join("");
+          const zbars = (zoneAllByKey.get(z) || []).filter(zz => String(zz.program) === String(k)).map(iv => barHTML(iv, xOf, range, "Zone", col)).join("");
           const zlbl = `<span style="${lblBase}color:#cbd5e1;padding-left:12px;" title="Zone ${escapeHtml(z)} in Program ${escapeHtml(k)}">↳ ${swatch(col)}Z${escapeHtml(z)}</span>`;
           html += track(zlbl, zbars, "rgba(148,163,184,0.04)");
         }
@@ -722,7 +737,7 @@ function renderSwimlane(range, attempt) {
     if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected zone runs in view.</div>`;
     for (const k of zKeys) {
       const col = zoneColor(k);
-      const bars = zoneRuns.filter(iv => iv.key === k).map(iv => barHTML(iv, xOf, range, "Zone", col)).join("");
+      const bars = (zoneByKey.get(k) || []).map(iv => barHTML(iv, xOf, range, "Zone", col)).join("");
       html += track(`<span style="color:#cbd5e1;${lblBase}" title="Zone ${escapeHtml(k)}">${swatch(col)}Z${escapeHtml(k)}</span>`, bars);
     }
   }
@@ -740,25 +755,26 @@ function renderSwimlane(range, attempt) {
   lane.style.position = "relative";
   lane.innerHTML = gridLinesHTML(xScale, "rgba(226,232,240,0.16)", 4) + alertHTML + html;
 
-  // corner triangles jump to the other end of the run (don't trigger the bar's zoom)
-  lane.querySelectorAll(".tl-jump[data-to]").forEach(t => {
-    t.addEventListener("click", ev => { ev.stopPropagation(); panToTime(Number(t.getAttribute("data-to"))); });
-  });
-  // bar body click → zoom to that run; label click → expand/collapse zones
-  lane.querySelectorAll(".tl-bar[data-start]").forEach(bar => {
-    bar.addEventListener("click", ev => { ev.stopPropagation(); zoomTo(Number(bar.getAttribute("data-start")), Number(bar.getAttribute("data-end")) + 1); });
-  });
-  lane.querySelectorAll(".lane-label[data-prog]").forEach(l => {
-    l.addEventListener("click", () => {
-      const p = l.getAttribute("data-prog");
-      if (expandedPrograms.has(p)) expandedPrograms.delete(p); else expandedPrograms.add(p);
-      refreshSwimlane();
+  // One delegated click handler (attached once) dispatches by target, instead of re-binding a
+  // listener on every jump/bar/label/mark on each render. Priority: jump (inside a bar) → label →
+  // alert mark → bar body. stopPropagation on jump/bar matches the old behavior (no dropdown-close).
+  if (!lane._delegated) {
+    lane._delegated = true;
+    lane.addEventListener("click", ev => {
+      const jump = ev.target.closest(".tl-jump[data-to]");
+      if (jump) { ev.stopPropagation(); panToTime(Number(jump.getAttribute("data-to"))); return; }
+      const label = ev.target.closest(".lane-label[data-prog]");
+      if (label) {
+        const p = label.getAttribute("data-prog");
+        if (expandedPrograms.has(p)) expandedPrograms.delete(p); else expandedPrograms.add(p);
+        refreshSwimlane(); return;
+      }
+      const mark = ev.target.closest(".alert-mark[data-tsms]");
+      if (mark) { jumpTo(Number(mark.getAttribute("data-tsms"))); return; }
+      const bar = ev.target.closest(".tl-bar[data-start]");
+      if (bar) { ev.stopPropagation(); zoomTo(Number(bar.getAttribute("data-start")), Number(bar.getAttribute("data-end")) + 1); }
     });
-  });
-  // alert mark click → pin on timeline + jump to that event in the feed
-  lane.querySelectorAll(".alert-mark[data-tsms]").forEach(m => {
-    m.addEventListener("click", () => jumpTo(Number(m.getAttribute("data-tsms"))));
-  });
+  }
   positionPin();
   positionPlayhead();
 }
@@ -821,8 +837,13 @@ function renderEventTimeline(range, attempt) {
 
   // gridlines aligned to the chart's x ticks (match the main timeline)
   lane.innerHTML = gridLinesHTML(xScale, "rgba(226,232,240,0.10)", 1) + html;
-  lane.querySelectorAll(".ev-mark[data-tsms]").forEach(m =>
-    m.addEventListener("click", () => jumpTo(Number(m.getAttribute("data-tsms")))));
+  if (!lane._delegated) {
+    lane._delegated = true;
+    lane.addEventListener("click", ev => {
+      const m = ev.target.closest(".ev-mark[data-tsms]");
+      if (m) jumpTo(Number(m.getAttribute("data-tsms")));
+    });
+  }
 
   // legend (only the groups present) + count
   const present = EVENT_GROUPS.filter(g => evs.some(e => eventGroupOf(e) === g));
@@ -858,6 +879,13 @@ function jumpTo(ts) { pinAt(ts); focusFeedEvent(ts); }
 
 /* ---- Scrubber playhead + right-edge "what's running" panel ---- */
 let playheadOn = false, playheadSnap = true, playheadTime = null;
+// The playhead line moves instantly on every pointermove, but the heavy panel rebuild
+// (two full `filtered` scans + run cloning) is coalesced to one per animation frame while dragging.
+let scrubPanelRaf = null;
+function scheduleScrubPanel() {
+  if (scrubPanelRaf) return;
+  scrubPanelRaf = requestAnimationFrame(() => { scrubPanelRaf = null; updateScrubPanel(); });
+}
 
 // run intervals for the currently-visible groups (same gating as renderSwimlane), with a group tag
 function visibleRunsAt() {
@@ -897,7 +925,8 @@ function positionPlayhead() {
   el.style.left = xScale.getPixelForValue(playheadTime) + "px";
   el.style.display = "block";
   panel.classList.remove("hidden");
-  updateScrubPanel();
+  // throttle the expensive panel rebuild during an active drag; update immediately otherwise
+  if (scrubbing) scheduleScrubPanel(); else updateScrubPanel();
 }
 
 function updateScrubPanel() {
@@ -949,8 +978,14 @@ function updateScrubPanel() {
     `<div><div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Running now (${active.length})</div>${runHTML}</div>` +
     flowHTML + alertHTML;
 
-  document.querySelectorAll("#scrubBody .scrub-alert").forEach(a =>
-    a.addEventListener("click", () => jumpTo(Number(a.getAttribute("data-tsms")))));
+  const body = $("scrubBody");
+  if (!body._delegated) {
+    body._delegated = true;
+    body.addEventListener("click", ev => {
+      const a = ev.target.closest(".scrub-alert[data-tsms]");
+      if (a) jumpTo(Number(a.getAttribute("data-tsms")));
+    });
+  }
 }
 
 /* ---- Component C: Activity Audit feed (instantaneous events) ---- */
@@ -989,14 +1024,18 @@ function renderFeed(inWin) {
   host.innerHTML = shown.length
     ? shown.map((e, idx) => feedRowHTML(e, idx)).join("")
     : '<div class="px-5 py-8 text-center text-slate-500 text-sm">No events in this window.</div>';
-  host.querySelectorAll(".feed-row").forEach(row => {
-    row.addEventListener("click", () => {
+  // One delegated listener (attached once) instead of re-binding every row on each render.
+  if (!host._delegated) {
+    host._delegated = true;
+    host.addEventListener("click", ev => {
+      const row = ev.target.closest(".feed-row");
+      if (!row) return;
       const idx = row.getAttribute("data-idx");
       const d = host.querySelector(`[data-fdetail="${idx}"]`);
       if (d) d.classList.toggle("hidden");
       pinAt(Number(row.getAttribute("data-tsms")));
     });
-  });
+  }
   $("feedInfo").textContent = ordered.length > FEED_CAP
     ? `Showing first ${FEED_CAP.toLocaleString()} of ${ordered.length.toLocaleString()} (${alerts.length} alerts)`
     : `${ordered.length.toLocaleString()} events${alerts.length ? ` · ${alerts.length} alerts` : ""}`;
@@ -1158,7 +1197,9 @@ function setScrubber(on) {
   if (on && playheadTime == null) { const r = currentRange(); playheadTime = (r.start + r.end) / 2; }
   // toggling the drawer changes the available width → rebuild the chart so it measures the new size
   // synchronously and the swimlane bars align to the visible area (not the old, wider canvas).
+  // The minimap canvas is width-fitted too, so refit its density histogram at the new width.
   hydroDirty = true;
+  miniDensityDirty = true;
   if (allEvents.length) render(); else positionPlayhead();
 }
 $("scrubberOn").addEventListener("change", e => setScrubber(e.target.checked));
@@ -1180,7 +1221,13 @@ timeWrap.addEventListener("pointermove", e => {
   if (!scrubbing) return;
   const t = timeAtClientX(e.clientX); if (t != null) setPlayhead(snapTime(t));
 });
-timeWrap.addEventListener("pointerup", e => { scrubbing = false; try { timeWrap.releasePointerCapture(e.pointerId); } catch (_) {} });
+timeWrap.addEventListener("pointerup", e => {
+  scrubbing = false;
+  // commit a final, non-throttled panel update so it matches the resting playhead exactly
+  if (scrubPanelRaf) { cancelAnimationFrame(scrubPanelRaf); scrubPanelRaf = null; }
+  if (playheadOn && playheadTime != null) updateScrubPanel();
+  try { timeWrap.releasePointerCapture(e.pointerId); } catch (_) {}
+});
 
 /* ---- Overview minimap (full span + draggable view window) ---- */
 const miniMap = $("miniMap");
@@ -1237,6 +1284,7 @@ function renderViewLive(range) {
 // Density background + alert ticks — depends only on `filtered`, so redraw only on data/filter changes.
 function drawMiniDensity() {
   if (!allEvents.length) return;
+  miniDensityDirty = false;
   const W = miniMap.clientWidth || 1, H = 44, f = miniFull(), span = f.e - f.s;
   const dpr = window.devicePixelRatio || 1;
   miniCanvas.width = W * dpr; miniCanvas.height = H * dpr;
@@ -1270,7 +1318,7 @@ function positionMiniWindow(range) {
 }
 
 function renderMiniMap(range) {
-  drawMiniDensity();
+  if (miniDensityDirty) drawMiniDensity(); // histogram depends only on `filtered`; skip on view-only moves
   positionMiniWindow(range);
 }
 
@@ -1390,11 +1438,22 @@ refModal.addEventListener("click", e => { if (e.target === refModal) closeRef();
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !refModal.classList.contains("hidden")) closeRef(); });
 
 /* ============================ PDF export (WYSIWYG + Controller ID / timeframe stamp) ============================ */
-$("pdfBtn").addEventListener("click", () => {
+$("pdfBtn").addEventListener("click", async () => {
   const el = $("dashboard");
   const btn = $("pdfBtn");
   const prev = btn.textContent;
   btn.disabled = true; btn.textContent = "Generating…";
+
+  // html2pdf (jsPDF + html2canvas + DOMPurify) is loaded on demand so it stays out of the initial bundle.
+  let html2pdf;
+  try {
+    ({ default: html2pdf } = await import("html2pdf.js"));
+  } catch (err) {
+    pushError("pdf", err && err.message, err && err.stack, "");
+    btn.disabled = false; btn.textContent = prev;
+    showErrorBanner("Couldn't load the PDF exporter", err);
+    return;
+  }
 
   // temporary stamp prepended to the captured area
   const range = currentRange(), span = range.end - range.start;
