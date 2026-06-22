@@ -811,7 +811,7 @@ function renderStat(range, inWin) {
   $("statTotal").textContent = inWin.length.toLocaleString();
   $("statAlerts").textContent = inWin.filter(e => e.isAlert).length.toLocaleString();
   const span = range.end - range.start;
-  $("statWindow").textContent = `${fmtTime(range.start, span)} → ${fmtTime(range.end, span)}`;
+  $("statWindow").textContent = `${fmtTimeDate(range.start, span)} → ${fmtTimeDate(range.end, span)}`;
 }
 
 /* ============================ Timeline render pipeline ============================ */
@@ -1439,6 +1439,14 @@ function fmtTime(ms, spanMs) {
   if (spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+// Like fmtTime but always includes the calendar date — used for the window-range label so a
+// same-day window reads e.g. "Jun 17, 12:00 AM" instead of a bare "12:00 AM".
+function fmtTimeDate(ms, spanMs) {
+  const d = new Date(ms);
+  const date = { month: "short", day: "numeric" };
+  if (spanMs <= 3 * 60000) return d.toLocaleString([], { ...date, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return d.toLocaleString([], { ...date, hour: "2-digit", minute: "2-digit" });
+}
 function fmtDuration(ms) {
   const m = Math.round(ms / 60000);
   if (m < 60) return `${m} min`;
@@ -1820,7 +1828,7 @@ $("pdfBtn").addEventListener("click", () => {
   const stamp = document.createElement("div");
   stamp.style.cssText = "padding:6px 4px 12px;margin-bottom:4px;border-bottom:1px solid #334155;color:#e2e8f0;font-size:13px;";
   stamp.innerHTML = `<strong>Baseline Irrigation Report</strong> &nbsp;·&nbsp; Controller: <strong>${escapeHtml(cid || "—")}</strong>` +
-    ` &nbsp;·&nbsp; Window: ${escapeHtml(fmtTime(range.start, span))} → ${escapeHtml(fmtTime(range.end, span))}` +
+    ` &nbsp;·&nbsp; Window: ${escapeHtml(fmtTimeDate(range.start, span))} → ${escapeHtml(fmtTimeDate(range.end, span))}` +
     ` &nbsp;·&nbsp; Generated ${escapeHtml(new Date().toLocaleString())}`;
   el.insertBefore(stamp, el.firstChild);
 
