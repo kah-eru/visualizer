@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   Custom app styles (moved verbatim from the original index.html <style> block).
+   Tailwind utilities are imported above; everything below is the app's own CSS.
+   ========================================================================== */
+body { background-color: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+.detail-row td { background-color: #0b1220; }
+input[type="range"] { accent-color: #38bdf8; }
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { color: #38bdf8; }
+.data-row { cursor: pointer; }
+.data-row:hover { background-color: #1e293b; }
+#dropZone.dragover { border-color: #38bdf8; background-color: #1e293b; }
+@keyframes zoomIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+.zoom-anim.playing { animation: zoomIn 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+.help-chip { cursor: help; }
+.help-chip:hover { border-color: #38bdf8; }
+#refModal { backdrop-filter: blur(2px); }
+@keyframes rawFlash { 0% { background-color: rgba(56,189,248,0.45); } 100% { background-color: rgba(56,189,248,0.12); } }
+tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px 0 0 #38bdf8; animation: rawFlash 0.9s ease-out; }
+.tl-track { position: relative; height: 22px; background: rgba(148,163,184,0.06); border-radius: 4px; }
+.tl-bar { position: absolute; top: 2px; height: 18px; border-radius: 4px; cursor: pointer; overflow: hidden;
+  font-size: 10px; line-height: 18px; color: #0b1220; font-weight: 600; padding: 0 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+.tl-bar:hover { outline: 2px solid #e2e8f0; }
+.tl-ongoing { background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.18) 5px, rgba(0,0,0,0.18) 10px); }
+.tl-bar.clip-l { border-left: 3px solid #e2e8f0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.tl-bar.clip-r { border-right: 3px solid #e2e8f0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+/* per-run status texture (used over a zone's own color) */
+.run-hatch { background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.28) 4px, rgba(0,0,0,0.28) 8px); }
+/* corner jump triangles: ▶ (top-left → go to end), ◀ (top-right → go to start) */
+.tl-jump { position: absolute; top: 1px; width: 0; height: 0; cursor: pointer; z-index: 3; opacity: 0.85; }
+.tl-jump:hover { opacity: 1; }
+.tl-jump-start { left: 1px; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #e2e8f0; }
+.tl-jump-end { right: 1px; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #e2e8f0; }
+/* clickable red alert ticks on the timeline */
+.alert-mark { position: absolute; top: 0; width: 0; height: 0; transform: translateX(-50%); cursor: pointer;
+  border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 9px solid #ef4444; }
+.alert-mark:hover { border-top-color: #fda4af; }
+/* interventions & alerts timeline: discrete diamond markers per event */
+.ev-track { position: relative; height: 20px; margin-bottom: 3px; }
+.ev-mark { position: absolute; top: 50%; width: 9px; height: 9px; transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 2px; cursor: pointer; z-index: 3; }
+.ev-mark:hover { outline: 2px solid #e2e8f0; z-index: 5; }
+.feed-flash { animation: rawFlash 1.2s ease-out; }
+/* lane checklist dropdowns */
+.ml-dd { position: relative; }
+.ml-dd-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.ml-dd-panel { position: absolute; z-index: 30; left: 0; right: 0; margin-top: 2px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+.ml-dd-list { max-height: 180px; overflow-y: auto; }
+.ml-dd-list label, .ml-dd-all { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.ml-dd-list label:hover, .ml-dd-all:hover { background: #1e293b; }
+/* scrubber playhead */
+#playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fbbf24; box-shadow: 0 0 6px #fbbf24; z-index: 7; cursor: ew-resize; display: none; }
+#playhead::before { content: ""; position: absolute; top: -1px; left: -5px; width: 12px; height: 8px; background: #fbbf24; border-radius: 2px; }
+#timeWrap.scrub-on { cursor: ew-resize; -webkit-user-select: none; user-select: none; }
+/* reserve space for the scrubber drawer so it never overlaps the dashboard */
+#appRoot.scrub-open { padding-right: 300px; }
+/* overview minimap */
+#miniWindow { cursor: grab; }
+#miniWindow.dragging { cursor: grabbing; }
+.mini-handle { position: absolute; top: 0; bottom: 0; width: 6px; background: #38bdf8; cursor: ew-resize; }
+.mini-handle[data-edge="L"] { left: -1px; border-radius: 5px 0 0 5px; }
+.mini-handle[data-edge="R"] { right: -1px; border-radius: 0 5px 5px 0; }
+/* swimlane run colors */
+.run-scheduled { background:#22c55e; }
+.run-manual { background:#f59e0b; }
+.run-terminated { background:#ef4444; background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.28) 4px, rgba(0,0,0,0.28) 8px); }
+/* vertical pin dropped on the swimlane from the audit feed */
+#swimPin { position:absolute; top:0; bottom:0; width:2px; background:#38bdf8; box-shadow:0 0 6px #38bdf8; pointer-events:none; z-index:5; display:none; }
+/* audit feed severity accents */
+.feed-row { cursor:pointer; border-left:3px solid transparent; }
+.feed-row:hover { background:#1e293b; }
+.feed-crit { border-left-color:#ef4444; }
+.feed-warn { border-left-color:#f59e0b; }
+.feed-audit { border-left-color:#38bdf8; }
+.feed-pinned { background: rgba(239,68,68,0.08); }
+details > summary { cursor:pointer; list-style:none; }
+details > summary::-webkit-details-marker { display:none; }
