@@ -13,10 +13,15 @@ Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — 
 - **`src/styles.css`** — `@import "tailwindcss";` + the app's custom CSS (was the inline `<style>`).
 - **`src/constants.js`** — mapping tables, `KEY_INFO`, `GENERAL_NOTES`, `NOISE_CATCODES`, flow/pressure
   key sets, conversion consts, `FEED_CAP` (all pure data, exported).
-- **`src/app.js`** — the entire dashboard core (parse → filter → render → swimlane/scrubber/feed/minimap
-  + all event wiring). Kept as one module on purpose: the render code is tightly coupled and shares
-  mutable state via module-local `let`s. Imports `chart.js/auto`, `papaparse`, `html2pdf.js`, the
-  constants, and `errors.js`. Exports `getDiagnostics()` for the feedback report.
+- **`src/app.js`** — the dashboard core (filter → render → swimlane/scrubber/feed/minimap + all event
+  wiring + DOM glue). Kept as one module on purpose: the render code is tightly coupled and shares mutable
+  state via module-local `let`s. Registers just the Chart.js pieces it uses (not `chart.js/auto`), imports
+  `papaparse`, the pure-logic modules below, and `errors.js`; **lazy-imports** `html2pdf.js` only when the
+  user exports a PDF. Exports `getDiagnostics()` for the feedback report.
+- **`src/parse.js` / `src/runs.js` / `src/format.js` / `src/classify.js`** — the **pure, DOM-free** data
+  logic extracted out of app.js so it can be unit-tested directly in Node (`tests/`): CSV row parsing +
+  program inference (`parse`), swimlane run-interval pairing (`runs`), time/duration/window/variance/sort
+  helpers (`format`), and event severity/grouping/subject classification (`classify`). app.js imports them.
 - **`src/errors.js`** — global `error`/`unhandledrejection` handlers + a 50-entry ring buffer (also tees
   `console.error/warn`); shows a dismissible fatal banner; exports `getErrorLog`, `pushError`,
   `showErrorBanner`, `guard`. Imported first so handlers install before the app runs.
@@ -266,11 +271,12 @@ index.html
 - **PDF export** excludes anything with `data-html2canvas-ignore` (upload box, all controls, minimap).
 - **No framework / no state library** — it's direct DOM. Re-render functions rebuild `innerHTML` and
   re-attach listeners each time; keep that pattern.
-- **Syntax check after edits** (there are no real tests):
-  ```bash
-  sed -n '/<script>/,/<\/script>/p' index.html | sed '1d;$d' > /tmp/v.js && node --check /tmp/v.js
-  ```
-  This only checks JS syntax, not behavior — verify visually in a browser.
+- **Run the tests after edits.** `npm run test:run` (CI mode) or `npm test` (watch). Vitest unit-tests
+  the pure data logic in `src/{parse,runs,format,classify}.js` (see `tests/`). They cover parsing,
+  program inference, run pairing, variance, window snapping, and event classification — but **not** the
+  DOM render pipeline, so still verify rendering visually in a browser (DevTools MCP) after UI changes.
+  CI runs these on every PR (`.github/workflows/ci.yml`) and the Pages deploy is **gated** on them
+  passing (`deploy.yml`: `build needs: test`).
 
 ---
 
@@ -295,7 +301,9 @@ index.html
   notice + a benign form-label a11y warning).
 
 **Still to do / worth verifying:**
-1. **No automated tests** — only `node --check` (syntax) + manual/DevTools-driven verification.
+1. **Tests cover the pure data logic only** (`tests/` via Vitest) — the DOM render pipeline,
+   swimlane/scrubber wiring, and PDF export are still verified manually/via DevTools MCP. An
+   integration (jsdom) or E2E (Playwright) layer would close that gap.
 2. **Large logs** rely on the 1500-row feed cap (`FEED_CAP`) + density binning; not virtualized.
 3. **Polish ideas** (not requested, just candidates): keyboard nav for the scrubber, persist toggle
    state across reloads, export the event/alert timeline data, narrow-screen layout for the drawer.

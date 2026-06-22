@@ -17,7 +17,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Run the unit tests first; the build (and therefore the deploy) only runs if they pass,
+  # so a broken change can't ship to the live Pages site.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:run
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

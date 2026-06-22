@@ -16,10 +16,19 @@ import Papa from "papaparse";
 // so it's loaded on demand via dynamic import() in the PDF handler — not in the initial bundle.
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
-  GPM_TO_LPM, PSI_TO_KPA, FLOW_KEYS, PRESSURE_KEYS, FEED_CAP,
-  NOISE_CATCODES, KEY_INFO, GENERAL_NOTES,
+  FEED_CAP, KEY_INFO, GENERAL_NOTES,
 } from "./constants.js";
 import { showErrorBanner, pushError } from "./errors.js";
+// Pure data logic lives in dependency-free modules (unit-tested in tests/); app.js wires them to the DOM.
+import { parseRow, inferEffectivePrograms } from "./parse.js";
+import { RUN_START, RUN_STOP, makeRun, buildRunIntervals } from "./runs.js";
+import {
+  escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
+  windowLabel, snapWindow, eventVariancePct, categoryColor,
+} from "./format.js";
+import {
+  isDurationMarker, feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
+} from "./classify.js";
 
 /* ============================ State ============================ */
 let allEvents = [];     // full parsed dataset
@@ -42,21 +51,8 @@ let windowUnit = "day"; // active window unit: second|minute|hour|day|week|month
 const laneSel = { program: new Set(), zone: new Set(), mainline: new Set() };
 const laneAll = { program: [], zone: [], mainline: [] }; // full key lists per group
 
-/* deterministic color per category */
-const CATEGORY_COLORS = {};
-function categoryColor(name) {
-  if (CATEGORY_COLORS[name]) return CATEGORY_COLORS[name];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-  const c = `hsl(${h}, 65%, 58%)`;
-  CATEGORY_COLORS[name] = c;
-  return c;
-}
-
 /* ============================ Shared helpers ============================ */
 const $ = document.getElementById.bind(document);
-// numeric-aware comparator (e.g. zone/program keys): sort by number, then lexically
-const numCmp = (a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0) || String(a).localeCompare(String(b));
 // Chart.js owns the shared time axis; these expose its scale/area once it's measured.
 const chartX = () => (hydroChart && hydroChart.scales) ? hydroChart.scales.x : null;
 const chartArea = () => { const a = hydroChart && hydroChart.chartArea; return (a && a.right > a.left) ? a : null; };
@@ -66,75 +62,6 @@ const gridLinesHTML = (xScale, rgba, z) => `<div style="position:absolute;inset:
   (xScale.getTicks ? xScale.getTicks() : []).map(t => `<div style="position:absolute;top:0;bottom:0;left:${xScale.getPixelForValue(t.value)}px;width:1px;background:${rgba};"></div>`).join("") + `</div>`;
 // sticky lane-label base style (left gutter), parameterized by row height + width
 const laneLabelStyle = (h, w) => `position:sticky;left:0;z-index:2;display:inline-flex;align-items:center;height:${h}px;width:${w}px;font-size:10px;background:#0f172a;`;
-
-/* ============================ Timestamp parsing ============================ */
-// Format: MM/dd/yy HH:mm:ss -0600
-function parseTimestamp(raw) {
-  if (!raw) return null;
-  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]\d{4})?/);
-  if (!m) { const d = new Date(raw); return isNaN(d) ? null : d; }
-  let [, mo, day, yr, hh, mm, ss, tz] = m;
-  let year = parseInt(yr, 10);
-  if (year < 100) year += 2000;
-  // Build a local Date (we treat values as wall-clock time from the controller)
-  const d = new Date(year, parseInt(mo,10)-1, parseInt(day,10), parseInt(hh,10), parseInt(mm,10), parseInt(ss,10));
-  return isNaN(d) ? null : d;
-}
-
-/* ============================ Row parsing ============================ */
-function parseRow(cols) {
-  if (!cols || cols.length === 0) return null;
-  const tsRaw = (cols[0] || "").trim();
-  const ts = parseTimestamp(tsRaw);
-  if (!ts) return null;
-
-  const catCode = (cols[1] || "").trim();
-  const actCode = (cols[2] || "").trim();
-  const trgCode = (cols[3] || "").trim();
-
-  const pairs = {};     // key -> {value, display, unit, raw}
-  const extras = [];    // positional / non key=value tokens
-
-  for (let i = 4; i < cols.length; i++) {
-    const token = (cols[i] || "").trim();
-    if (token === "") continue;
-    const eq = token.indexOf("=");
-    if (eq === -1) { extras.push(token); continue; }
-    const key = token.slice(0, eq).trim();
-    const rawVal = token.slice(eq + 1).trim();
-    let value = rawVal, unit = "", display = rawVal;
-    const num = parseFloat(rawVal);
-    const isNum = rawVal !== "" && !isNaN(num) && /^-?\d*\.?\d+$/.test(rawVal);
-
-    if (FLOW_KEYS.has(key) && isNum) {
-      value = num * GPM_TO_LPM; unit = "L/min"; display = value.toFixed(2) + " L/min";
-    } else if (PRESSURE_KEYS.has(key) && isNum) {
-      value = num * PSI_TO_KPA; unit = "kPa"; display = value.toFixed(2) + " kPa";
-    } else {
-      value = isNum ? num : rawVal;
-    }
-    pairs[key] = { value, display, unit, raw: rawVal };
-  }
-
-  const category = CATEGORY_MAP[catCode] || catCode || "—";
-  const action = ACTION_MAP[actCode] || actCode || "—";
-  const trigger = TRIGGER_MAP[trgCode] || trgCode || "—";
-  const isAlert = catCode === "AL" || actCode === "ER";
-  const isNoise = NOISE_CATCODES.has(catCode);
-  const program = pairs.PG ? String(pairs.PG.raw) : null;
-  const flow = pairs.AC ? pairs.AC.value : (pairs.EX ? pairs.EX.value : null);
-  // ZN may be a single zone or a semicolon-separated list; ML is a single mainline.
-  const zones = pairs.ZN ? String(pairs.ZN.raw).split(";").map(z => z.trim()).filter(Boolean) : [];
-  const mainline = pairs.ML ? String(pairs.ML.raw) : null;
-
-  const rawLine = cols.map(c => (c == null ? "" : c)).join(",");
-
-  return {
-    ts, tsRaw, catCode, actCode, trgCode,
-    category, action, trigger,
-    pairs, extras, isAlert, isNoise, program, progEff: program, flow, zones, mainline, rawLine
-  };
-}
 
 /* ============================ Detail rendering (with hover help) ============================ */
 function keyTooltip(k) {
@@ -211,10 +138,6 @@ function handleFile(file) {
   });
 }
 
-// numeric-aware distinct + sort, returns array of string values
-function distinctSorted(values) {
-  return [...new Set(values.filter(v => v != null && v !== ""))].sort(numCmp);
-}
 function fillSelect(id, allLabel, values, labelFn) {
   const sel = $(id);
   sel.innerHTML = `<option value="">${allLabel}</option>` +
@@ -249,35 +172,13 @@ function updateLaneButtons() {
   }
 }
 
-// Attribute zone events that lack a PG= field to the program that last ran that zone,
-// so program filtering keeps each zone's start AND its stop/done/soak lines together.
-function inferEffectivePrograms() {
-  const order = allEvents.map((e, i) => i).sort((a, b) => {
-    const d = allEvents[a].ts.getTime() - allEvents[b].ts.getTime();
-    return d !== 0 ? d : a - b;
-  });
-  const zoneProgram = {};
-  for (const idx of order) {
-    const e = allEvents[idx];
-    if (e.program != null) {
-      e.progEff = e.program;
-      for (const z of e.zones) zoneProgram[z] = e.program;
-    } else if (e.zones.length) {
-      const known = e.zones.map(z => zoneProgram[z]).find(p => p != null);
-      e.progEff = known != null ? known : null;
-    } else {
-      e.progEff = null;
-    }
-  }
-}
-
 /* ============================ After load: populate filters ============================ */
 function onDataLoaded() {
   if (!allEvents.length) {
     $("subtitle").textContent = "No valid events found in file.";
     return;
   }
-  inferEffectivePrograms();
+  inferEffectivePrograms(allEvents);
 
   // range bounds (reduce avoids call-stack limits of spread on large arrays)
   let minT = Infinity, maxT = -Infinity;
@@ -285,7 +186,7 @@ function onDataLoaded() {
   dataMinT = minT; dataMaxT = maxT;
   // Default window: the calendar DAY (midnight → midnight) containing the file's last event.
   windowUnit = "day";
-  zoomRange = snapWindow("day", maxT);
+  zoomRange = snapWindow("day", maxT, { min: dataMinT, max: dataMaxT });
   zoomStack = [];
 
   // populate the timeline lane dropdowns (multi-select checklists)
@@ -330,13 +231,6 @@ function toLocalInput(d) {
 }
 
 /* ============================ Filtering ============================ */
-function eventVariancePct(e) {
-  const ac = e.pairs.AC ? e.pairs.AC.value : null;
-  const ex = e.pairs.EX ? e.pairs.EX.value : null;
-  if (ac == null || ex == null || ex === 0) return null;
-  return Math.abs(ac - ex) / Math.abs(ex) * 100;
-}
-
 function applyFilters() {
   const fromV = $("dateFrom").value;
   const toV = $("dateTo").value;
@@ -426,27 +320,10 @@ function syncDateInputs(range) {
   $("dateTo").value = toLocalInput(new Date(range.end - 1));
 }
 
-// set the view window to a fixed size, anchored at the current window's start (clamped to data)
-// Snap a window of the given unit to natural calendar boundaries around `anchorMs`
-// (day → local midnight…next midnight, week → Sun 00:00…+7d, month → 1st…1st, etc.).
-function snapWindow(unit, anchorMs) {
-  const d = new Date(anchorMs); let start, end, e;
-  switch (unit) {
-    case "second": d.setMilliseconds(0); start = d.getTime(); end = start + 1000; break;
-    case "minute": d.setSeconds(0, 0); start = d.getTime(); end = start + 60000; break;
-    case "hour":   d.setMinutes(0, 0, 0); start = d.getTime(); end = start + 3600000; break;
-    case "day":    d.setHours(0, 0, 0, 0); start = d.getTime(); e = new Date(start); e.setDate(e.getDate() + 1); end = e.getTime(); break;
-    case "week":   d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); start = d.getTime(); e = new Date(start); e.setDate(e.getDate() + 7); end = e.getTime(); break;
-    case "month":  start = new Date(d.getFullYear(), d.getMonth(), 1).getTime(); end = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime(); break;
-    default:       start = dataMinT; end = dataMaxT + 1;
-  }
-  return { start, end };
-}
-
 // set the view to an aligned window of `unit`, snapped to the period containing `anchor`
 function setWindowUnit(unit, anchor) {
   windowUnit = unit; zoomStack = [];
-  zoomRange = unit === "all" ? { start: dataMinT, end: dataMaxT + 1 } : snapWindow(unit, anchor);
+  zoomRange = unit === "all" ? { start: dataMinT, end: dataMaxT + 1 } : snapWindow(unit, anchor, { min: dataMinT, max: dataMaxT });
   render();
 }
 
@@ -470,14 +347,6 @@ function zoomOut() {
   if (zoomStack.length) zoomRange = zoomStack.pop();
   else zoomRange = null;            // back to the date-picker window
   render();
-}
-function windowLabel(ms) {
-  if (ms <= 1500) return "second";
-  if (ms <= 90000) return "minute";
-  if (ms <= 5400000) return "hour";
-  if (ms <= 172800000) return "day";
-  if (ms <= 1209600000) return "week";
-  return "month";
 }
 // step to the adjacent period — re-snapping for aligned units, else shift by width
 function navShift(dir) {
@@ -574,51 +443,6 @@ function renderHydro(range) {
 }
 
 /* ---- Component A: Swimlane (duration runs), pixel-aligned to the hydraulic X scale ---- */
-const RUN_START = new Set(["SR", "RN", "MR"]);
-const RUN_STOP  = new Set(["SP", "DN", "OF"]);
-
-function makeRun(key, start, end, startEv, stopEv, terminated, ongoing) {
-  let kind = "run-scheduled";
-  const manual = !!(startEv && (startEv.actCode === "MR" || startEv.trgCode === "US" || startEv.trgCode === "OP"));
-  if (terminated || (stopEv && (stopEv.actCode === "PA" || stopEv.actCode === "DR"))) kind = "run-terminated";
-  else if (manual) kind = "run-manual";
-  const program = startEv ? (startEv.program != null ? startEv.program : startEv.progEff) : null;
-  return { key: String(key), start, end, kind, manual, ongoing: !!ongoing, program };
-}
-
-// Pair start→stop events into runs. mode "program": PG SR/RN/MR → SP/DN/OF;
-// "zone": ZN WT → DN; "mainline": ML RN → OF (ignoring DS/disable).
-function buildRunIntervals(evs, mode, globalEnd) {
-  const groups = {};
-  for (const e of evs) {
-    if (mode === "program") {
-      if (e.catCode !== "PG" || e.program == null) continue;
-      (groups[e.program] = groups[e.program] || []).push(e);
-    } else if (mode === "mainline") {
-      if (e.catCode !== "ML" || e.mainline == null) continue;
-      (groups[e.mainline] = groups[e.mainline] || []).push(e);
-    } else {
-      if (e.catCode !== "ZN" || !e.zones.length) continue;
-      for (const z of e.zones) (groups[z] = groups[z] || []).push(e);
-    }
-  }
-  const startSet = mode === "program" ? RUN_START : mode === "mainline" ? new Set(["RN"]) : new Set(["WT"]);
-  const stopSet  = mode === "program" ? RUN_STOP  : mode === "mainline" ? new Set(["OF"]) : new Set(["DN"]);
-  const out = [];
-  for (const key of Object.keys(groups)) {
-    const list = groups[key].sort((a, b) => a.ts.getTime() - b.ts.getTime());
-    let open = null, openEv = null;
-    for (const e of list) {
-      const t = e.ts.getTime();
-      if (startSet.has(e.actCode)) { if (open == null) { open = t; openEv = e; } }
-      else if (stopSet.has(e.actCode)) { if (open != null) { out.push(makeRun(key, open, t, openEv, e)); open = null; openEv = null; } }
-      else if ((e.actCode === "PA" || e.actCode === "DR") && open != null) { out.push(makeRun(key, open, t, openEv, e, true)); open = null; openEv = null; }
-    }
-    if (open != null) out.push(makeRun(key, open, globalEnd, openEv, null, false, true));
-  }
-  return out;
-}
-
 const SWIM_ROW_H = 26;
 function refreshSwimlane() { renderSwimlane(currentRange()); }
 
@@ -780,27 +604,6 @@ function renderSwimlane(range, attempt) {
 }
 
 /* ---- Interventions & Alerts timeline (discrete event markers; separate togglable section) ---- */
-// Grouped, ordered; first matching group wins. These are the "why did this happen" events:
-// pauses, disables, skips/drops, config changes/errors, status/set messages, and alarms.
-const EVENT_GROUPS = [
-  { label: "Alarms",       color: "#f43f5e", test: e => e.catCode === "AL" || e.actCode === "ER" },
-  { label: "Pause",        color: "#f59e0b", test: e => e.actCode === "PA" },
-  { label: "Disable",      color: "#ef4444", test: e => e.actCode === "DS" },
-  { label: "Skip / Drop",  color: "#fb923c", test: e => e.actCode === "SK" || e.actCode === "DR" },
-  { label: "Config",       color: "#38bdf8", test: e => e.actCode === "CC" || e.actCode === "CE" },
-  { label: "Status / Set", color: "#a78bfa", test: e => e.actCode === "ST" || e.actCode === "SE" },
-];
-function eventGroupOf(e) { return EVENT_GROUPS.find(g => g.test(e)) || null; }
-
-// The reason an action was taken: TX message and/or the trailing free-text tokens, else the trigger.
-function whyText(e) {
-  const parts = [];
-  if (e.pairs.TX) parts.push(e.pairs.TX.raw);
-  for (const x of e.extras) { const s = String(x).replace(/=$/, "").trim(); if (s) parts.push(s); }
-  const why = parts.join(" · ");
-  return why || `by ${e.trigger}`;
-}
-
 function renderEventTimeline(range, attempt) {
   const card = $("eventTlCard");
   card.classList.toggle("hidden", !eventTlOn);
@@ -989,17 +792,6 @@ function updateScrubPanel() {
 }
 
 /* ---- Component C: Activity Audit feed (instantaneous events) ---- */
-// Events that define run durations are shown on the swimlane, not in the feed.
-function isDurationMarker(e) {
-  return (e.catCode === "ZN" && (e.actCode === "WT" || e.actCode === "DN")) ||
-         (e.catCode === "PG" && ["SR", "RN", "SP", "DN", "MR"].includes(e.actCode));
-}
-function feedSeverity(e) {
-  if (e.isAlert || ["FV", "CE", "LP", "DC"].includes(e.actCode)) return "crit";
-  if (["PA", "SK"].includes(e.actCode) || e.catCode === "SW") return "warn";
-  if (e.actCode === "CC" && e.trgCode === "US") return "audit";
-  return "";
-}
 function feedRowHTML(e, idx) {
   const sev = feedSeverity(e);
   const sevCls = sev === "crit" ? "feed-crit" : sev === "warn" ? "feed-warn" : sev === "audit" ? "feed-audit" : "";
@@ -1041,54 +833,6 @@ function renderFeed(inWin) {
     : `${ordered.length.toLocaleString()} events${alerts.length ? ` · ${alerts.length} alerts` : ""}`;
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
-
-/* ============================ Time formatting helpers ============================ */
-function fmtTime(ms, spanMs) {
-  const d = new Date(ms);
-  if (spanMs <= 3 * 60000) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  if (spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-// Like fmtTime but always includes the calendar date — used for the window-range label so a
-// same-day window reads e.g. "Jun 17, 12:00 AM" instead of a bare "12:00 AM".
-function fmtTimeDate(ms, spanMs) {
-  const d = new Date(ms);
-  const date = { month: "short", day: "numeric" };
-  if (spanMs <= 3 * 60000) return d.toLocaleString([], { ...date, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  return d.toLocaleString([], { ...date, hour: "2-digit", minute: "2-digit" });
-}
-function fmtDuration(ms) {
-  const m = Math.round(ms / 60000);
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60), r = m % 60;
-  return r ? `${h}h ${r}m` : `${h}h`;
-}
-
-
-/* ============================ Shared helpers ============================ */
-// Short, human-readable summary of what the event acted on (zone / mainline / device).
-// Returns { html, title } — title is the longer plain-text version for the hover tooltip.
-function subjectSummary(e) {
-  if (e.zones.length) {
-    const lbl = e.zones.length > 1 ? "Zones" : "Zone";
-    return { html: `${lbl} ${escapeHtml(e.zones.join(", "))}`, title: `${lbl} ${e.zones.join(", ")} (category: ${e.category})` };
-  }
-  if (e.mainline != null) return { html: `Mainline ${escapeHtml(e.mainline)}`, title: `Mainline ${e.mainline}` };
-  if (e.program != null)  return { html: `Program ${escapeHtml(e.program)}`, title: `Program ${e.program}` };
-  // common device identifier keys → "<Device> <id>"
-  const DEVICE_KEYS = [["SB","SubStation"],["RG","Rain Gauge"],["MV","Master Valve"],["PM","Pump"],
-    ["CP","Control Point"],["MS","Moisture Sensor"],["TS","Temp Sensor"],["PS","Pressure Sensor"],
-    ["FM","Flow Meter"],["WS","Water Source"],["SN","Serial"],["ID","ID"]];
-  for (const [k, lbl] of DEVICE_KEYS) {
-    if (e.pairs[k]) return { html: `${lbl} ${escapeHtml(e.pairs[k].raw)}`, title: `${lbl} ${e.pairs[k].raw} (category: ${e.category})` };
-  }
-  // fall back to the category itself as the subject (e.g. "System")
-  return { html: `<span class="text-slate-400">${escapeHtml(e.category)}</span>`, title: e.category };
-}
-
 /* ============================ Filter event wiring ============================ */
 const FILTER_SELECTS = ["zoneFilter","categoryFilter","actionFilter","triggerFilter","substationFilter","alertsOnly","humanAudit","showAdvanced"];
 FILTER_SELECTS.forEach(id =>
@@ -1122,7 +866,7 @@ $("resetBtn").addEventListener("click", () => {
   $("varMax").value = 100; $("varMaxVal").textContent = "100%";
   zoomStack = []; pinnedTs = null; expandedPrograms.clear();
   // back to the default: the calendar day containing the last event
-  windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT);
+  windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT, { min: dataMinT, max: dataMaxT });
   applyFilters();
 });
 
