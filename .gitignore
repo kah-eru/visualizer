@@ -1,5 +1,12 @@
-# Dependencies (app uses CDN scripts; node_modules is not needed at runtime)
+# Dependencies
 node_modules/
+
+# Vite build output (published to GitHub Pages by the deploy workflow)
+dist/
+
+# Local env (holds the feedback endpoint; provided as a CI secret for builds)
+.env
+.env.local
 
 # Local backup artifact (history is in git)
 index.html.bak

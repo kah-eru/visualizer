@@ -1,8 +1,46 @@
 # Baseline Irrigation Event Log Dashboard — Developer Hand-off
 
 > Context for the next person/AI picking this up. Read this top-to-bottom before editing.
-> Everything lives in one file: **`index.html`** (≈1827 lines as of this writing). There is no
-> build step, no server, no tests. Open the file in a browser (`file://` is fine) and drop a CSV.
+
+## Architecture (as of the website migration, 2026-06)
+
+This was originally one self-contained `index.html` (CDN scripts, inline `<style>` + `<script>`,
+opened from `file://`). It is now a **Vite + vanilla-ES-module static site** deployed to **GitHub
+Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — still 100% client-side
+(CSV parsing happens in the browser; nothing is uploaded).
+
+- **`index.html`** — markup only; loads `/src/main.js` as a module.
+- **`src/styles.css`** — `@import "tailwindcss";` + the app's custom CSS (was the inline `<style>`).
+- **`src/constants.js`** — mapping tables, `KEY_INFO`, `GENERAL_NOTES`, `NOISE_CATCODES`, flow/pressure
+  key sets, conversion consts, `FEED_CAP` (all pure data, exported).
+- **`src/app.js`** — the entire dashboard core (parse → filter → render → swimlane/scrubber/feed/minimap
+  + all event wiring). Kept as one module on purpose: the render code is tightly coupled and shares
+  mutable state via module-local `let`s. Imports `chart.js/auto`, `papaparse`, `html2pdf.js`, the
+  constants, and `errors.js`. Exports `getDiagnostics()` for the feedback report.
+- **`src/errors.js`** — global `error`/`unhandledrejection` handlers + a 50-entry ring buffer (also tees
+  `console.error/warn`); shows a dismissible fatal banner; exports `getErrorLog`, `pushError`,
+  `showErrorBanner`, `guard`. Imported first so handlers install before the app runs.
+- **`src/feedback.js`** — injects the header **Feedback** button + modal; bundles version/UA/viewport/URL
+  + error log + `getDiagnostics()` (filename + counts + filter state — **never CSV rows**); POSTs to
+  `VITE_FEEDBACK_ENDPOINT` (Formspree) with a download-report fallback. Opens on the `open-feedback`
+  event too (fired by the error banner).
+- **`src/main.js`** — entry: imports styles, errors, app, then `initFeedback({ getDiagnostics })`.
+- **`vite.config.js`** — `base:'/visualizer/'`; Tailwind v4 plugin; injects `__APP_VERSION__`
+  (`pkg.version` + git short SHA) and `__BUILD_TIME__`.
+- **`.github/workflows/deploy.yml`** — on push to `main`: `npm ci` → `npm run build` (with the
+  `VITE_FEEDBACK_ENDPOINT` secret) → publish `dist/` to Pages.
+
+**Dev:** `npm run dev` (→ `localhost:5173/visualizer/`). **Build:** `npm run build` → `dist/`.
+**Preview a prod build:** `npm run preview` (→ `localhost:4173/visualizer/`).
+
+> **Privacy:** the published site is `dist/` only. The real controller logs (`Evnt_202605.csv`,
+> `Events.csv`) and test fixtures (`Evnt_flow_test.csv`, `Eventstest.csv`) live in the repo root, are
+> **not** in `public/`, and are **not** served. Keep it that way.
+
+---
+
+The sections below describe the dashboard internals. They were written against the original single
+file; the **code is unchanged**, just relocated into `src/app.js` (line numbers are approximate now).
 
 ---
 
