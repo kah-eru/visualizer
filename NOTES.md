@@ -198,7 +198,7 @@ index.html
 - Shows instantaneous events; **excludes** duration markers (`isDurationMarker`, ≈L1369) since those
   are drawn as swimlane bars.
 - Alarms pinned on top, then chronological. Severity left-border accent via `feedSeverity`.
-- Capped at 1500 rows (`CAP` in `renderFeed`); there's also `MAX_TABLE_ROWS=1000` constant (legacy).
+- Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
 - Click a row → expand detail (chips + raw CSV line) and drop a pin on the timeline.
 
 ### Minimap (≈L1588+)
@@ -246,13 +246,22 @@ index.html
 - Collapsed Flow axis height 44→60px (was clipping bottom tick labels).
 - Scrubber alert rows enriched with where + why.
 
+**Verified in-browser (2026-06-22, Chrome via DevTools MCP, using `Evnt_flow_test.csv`):**
+- ✅ **Collapsed Flow axis** — Flow off → chart collapses to a 60px ruler with the bottom time-axis
+  labels fully visible (no clipping); swimlane + playhead stay aligned.
+- ✅ **"At Playhead" alert rows** — show *where — what*, e.g. `Zone 2 — Low flow variance on zone 2`,
+  plus Running-now runs and Flow carry-forward.
+- ✅ **Flow path** — `hasHydro` gate opens the variance section; Flow on draws AC (L/min) / EX (L/min) /
+  PR (kPa) with correct unit conversions (AC=47→177.9 L/min, PR=63→434.3 kPa) and a 3-series legend;
+  the variance slider filters correctly (min 50% → 20→5 events). No console errors (only the Tailwind-CDN
+  notice + a benign form-label a11y warning).
+
 **Still to do / worth verifying:**
-1. **Browser-verify** the last two fixes with a real file (collapsed Flow axis labels not clipped;
-   "At Playhead" alert rows show zone/program + error text correctly).
-2. **Flow path is untested against real telemetry** — `Evnt_202605.csv` has no AC/EX/PR. Find/synthesize
-   a file with flow data to exercise `buildHydroChart`'s dataset/legend/variance code paths.
-3. **No automated tests** — only `node --check`. Behavior is manual-verify only.
-4. **Large logs** rely on the 1500-row feed cap + density binning; not virtualized.
-5. **Polish ideas** (not requested, just candidates): keyboard nav for the scrubber, persist toggle
-   state across reloads, export the event/alert timeline data, narrow-screen layout for the drawer,
-   reconcile the unused `MAX_TABLE_ROWS` constant with the `CAP` in `renderFeed`.
+1. **No automated tests** — only `node --check` (syntax) + manual/DevTools-driven verification.
+2. **Large logs** rely on the 1500-row feed cap (`FEED_CAP`) + density binning; not virtualized.
+3. **Polish ideas** (not requested, just candidates): keyboard nav for the scrubber, persist toggle
+   state across reloads, export the event/alert timeline data, narrow-screen layout for the drawer.
+
+**Test fixture:** `Evnt_flow_test.csv` (repo root) — synthetic one-day log (06/17/26) that exercises the
+flow/variance/alarm/inference paths the real logs (`Evnt_202605.csv`, `Events.csv`) can't, since they
+carry zero AC/EX/PR telemetry.
