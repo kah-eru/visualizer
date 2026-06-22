@@ -5,9 +5,15 @@
    Tailwind utilities are imported above; everything below is the app's own CSS.
    ========================================================================== */
 body { background-color: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+/* Squared aesthetic — remove all rounded corners app-wide. !important is needed to beat
+   Tailwind rounded-* utilities and inline border-radius in JS templates (swatches/dots/bars).
+   The scrollbar thumb is a pseudo-element `*` can't match, so it's zeroed explicitly below. */
+*, *::before, *::after { border-radius: 0 !important; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 5px; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 .detail-row td { background-color: #0b1220; }
 input[type="range"] { accent-color: #38bdf8; }

@@ -28,9 +28,9 @@ jobs:
       - run: npm ci
       - name: Build
         env:
-          # Set this repo secret to your Formspree form URL to enable the feedback button's
+          # Set this repo secret to your Web3Forms access key to enable the feedback button's
           # "Send" path. If unset, the build still works — feedback falls back to download.
-          VITE_FEEDBACK_ENDPOINT: ${{ secrets.VITE_FEEDBACK_ENDPOINT }}
+          VITE_WEB3FORMS_KEY: ${{ secrets.VITE_WEB3FORMS_KEY }}
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

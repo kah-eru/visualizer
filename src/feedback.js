@@ -17,6 +17,10 @@ import { getErrorLog } from "./errors.js";
 const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 const BUILD_TIME = typeof __BUILD_TIME__ !== "undefined" ? __BUILD_TIME__ : "dev";
 const ENDPOINT = import.meta.env.VITE_FEEDBACK_ENDPOINT || "";
+// Web3Forms access key (a public submission token tied to your email, embedded in the client
+// bundle by design — same model as Formspree). Set VITE_WEB3FORMS_KEY to enable email delivery.
+const WEB3FORMS_KEY = import.meta.env.VITE_WEB3FORMS_KEY || "";
+const WEB3FORMS_URL = "https://api.web3forms.com/submit";
 
 let getDiagnostics = () => ({});
 let modal = null;
@@ -128,7 +132,7 @@ function setStatus(html, color) {
 
 async function send() {
   const payload = buildPayload();
-  if (!ENDPOINT) {
+  if (!WEB3FORMS_KEY && !ENDPOINT) {
     setStatus("No feedback endpoint is configured for this build — use “Download report” and email it instead.", "#fca5a5");
     return;
   }
@@ -136,16 +140,37 @@ async function send() {
   sendBtn.disabled = true;
   setStatus("Sending…", "#94a3b8");
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        message: payload.message || "(no message)",
-        email: payload.email || "(none)",
-        _report: JSON.stringify(payload),
-      }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let ok;
+    if (WEB3FORMS_KEY) {
+      // Web3Forms: POST the access key + fields; success is res.ok AND { success: true }.
+      const res = await fetch(WEB3FORMS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          access_key: WEB3FORMS_KEY,
+          subject: "Baseline Visualizer — feedback / report",
+          from_name: "Baseline Visualizer",
+          replyto: payload.email || undefined,
+          message: payload.message || "(no message)",
+          email: payload.email || "(none)",
+          _report: JSON.stringify(payload),
+        }),
+      });
+      ok = res.ok && (await res.json().catch(() => ({}))).success === true;
+      if (!ok) throw new Error(`HTTP ${res.status}`);
+    } else {
+      // Generic endpoint (e.g. Formspree): success is just res.ok.
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          message: payload.message || "(no message)",
+          email: payload.email || "(none)",
+          _report: JSON.stringify(payload),
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }
     setStatus("Thanks — your report was sent. ✓", "#86efac");
     setTimeout(close, 1200);
   } catch (err) {
