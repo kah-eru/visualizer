@@ -26,14 +26,17 @@ Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — 
   `console.error/warn`); shows a dismissible fatal banner; exports `getErrorLog`, `pushError`,
   `showErrorBanner`, `guard`. Imported first so handlers install before the app runs.
 - **`src/feedback.js`** — injects the header **Feedback** button + modal; bundles version/UA/viewport/URL
-  + error log + `getDiagnostics()` (filename + counts + filter state — **never CSV rows**); POSTs to
-  `VITE_FEEDBACK_ENDPOINT` (Formspree) with a download-report fallback. Opens on the `open-feedback`
-  event too (fired by the error banner).
+  + error log + `getDiagnostics()` (filename + counts + filter state — **never CSV rows**); POSTs primarily
+  to **Web3Forms** via `VITE_WEB3FORMS_KEY` (a public submission token tied to the destination email —
+  fine to embed in the client bundle, same model as Formspree). A generic `VITE_FEEDBACK_ENDPOINT`
+  (e.g. Formspree) is kept as a fallback path, and if neither is configured it falls back to downloading
+  the report. Opens on the `open-feedback` event too (fired by the error banner).
 - **`src/main.js`** — entry: imports styles, errors, app, then `initFeedback({ getDiagnostics })`.
 - **`vite.config.js`** — `base:'/visualizer/'`; Tailwind v4 plugin; injects `__APP_VERSION__`
   (`pkg.version` + git short SHA) and `__BUILD_TIME__`.
-- **`.github/workflows/deploy.yml`** — on push to `main`: `npm ci` → `npm run build` (with the
-  `VITE_FEEDBACK_ENDPOINT` secret) → publish `dist/` to Pages.
+- **`.github/workflows/deploy.yml`** — on push to `main`: runs a **`test` job first** (`npm ci` →
+  `npm run test:run`), then `build` (which `needs: test`) does `npm ci` → `npm run build` (with the
+  `VITE_WEB3FORMS_KEY` secret) → publish `dist/` to Pages. A failing test blocks the deploy.
 
 **Dev:** `npm run dev` (→ `localhost:5173/visualizer/`). **Build:** `npm run build` → `dist/`.
 **Preview a prod build:** `npm run preview` (→ `localhost:4173/visualizer/`).
@@ -67,13 +70,15 @@ The target user is someone auditing irrigation behavior: "what ran, when, for ho
 scheduled or manual, did anything get stopped early, and why." (See the memory files referenced
 below for the user's stated priorities.)
 
-### Tech stack (all CDN, no bundler)
+### Tech stack (Vite/npm build; deps bundled, not CDN)
 - **Chart.js 4.4.1** — the hydraulic line chart. Critically, it also **owns the shared X (time) scale**
   that the swimlane bars, event markers, gridlines, scrubber, and pins all align to via
-  `hydroChart.scales.x.getPixelForValue(ms)` / `getValueForPixel(px)`.
+  `hydroChart.scales.x.getPixelForValue(ms)` / `getValueForPixel(px)`. Imported slim — only the pieces it
+  uses are `Chart.register(...)`ed (not `chart.js/auto`). See §4.
 - **PapaParse 5.4.1** — CSV parsing (`worker:false` because workers are blocked under `file://`).
-- **TailwindCSS (CDN)** — styling, utility classes inline in the markup.
-- **html2pdf.js 0.10.1** — PDF export.
+- **TailwindCSS v4** — the Vite plugin (`@import "tailwindcss"` in `src/styles.css`), not the CDN.
+- **html2pdf.js 0.10.1** — PDF export. **Lazy-loaded** via dynamic `import()` only when the user exports
+  (it's the heaviest dependency); not in the initial bundle. See §4.
 
 ### Related context files (read these too)
 - `C:\Users\bmauricio\.claude\projects\C--Users-bmauricio-visualizer\memory\` — auto-memory:
@@ -161,6 +166,27 @@ and rebuilt up to 1500 feed rows **per frame** → janky. The fix (now in place)
 **Rule of thumb when you touch this:** if a change alters `filtered` or the chart's pixel width
 (e.g. opening/closing the scrubber drawer), set `hydroDirty = true` so the chart rebuilds. If it's a
 pure view move, leave `hydroDirty` false so only the scale moves.
+
+### Bundle + interaction optimizations (the "snappy" pass)
+
+On top of the render split above, a later pass trimmed the initial load and the per-interaction work:
+
+- **Slim Chart.js** — `Chart.register(LineController, LineElement, PointElement, LinearScale, Tooltip)`
+  (top of `app.js`) instead of `import Chart from "chart.js/auto"`, so only the used controllers/elements
+  ship in the initial bundle.
+- **Lazy html2pdf** — `html2pdf.js` (~638 kB) is `await import("html2pdf.js")`-ed **inside the PDF
+  handler**, so it becomes a separate on-demand chunk rather than initial-load weight. Combined with the
+  slim Chart.js, this cut the initial JS from ≈918 kB → ≈219 kB (gzip ≈285 → ≈78 kB).
+- **Minimap density gating** — `miniDensityDirty` flag: `drawMiniDensity()` (the canvas histogram, which
+  depends only on `filtered`) repaints **only** when filters change (set in `applyFilters`/`setScrubber`,
+  cleared after the draw). View-only moves still run `positionMiniWindow` but skip the histogram repaint.
+- **rAF-throttled scrubber panel** — `scheduleScrubPanel()` coalesces the right-drawer panel update to a
+  single `requestAnimationFrame` while dragging (`if (scrubbing) scheduleScrubPanel(); else
+  updateScrubPanel()`), with a final settle on `pointerup` so the released position is exact.
+- **Event delegation** — the render functions attach **one** listener per container, guarded by a
+  `_delegated` flag, and resolve the target with `e.target.closest(...)` — instead of re-binding a
+  listener on every feed row / swimlane bar on each re-render. (Re-render still rebuilds `innerHTML`; the
+  delegated listener on the stable parent survives, so it's only wired once.)
 
 ---
 
@@ -283,6 +309,14 @@ index.html
 ## 8. State of play / open items
 
 **Recently done (this session):**
+- **Performance pass** (see §4 "Bundle + interaction optimizations"): slim Chart.js register, lazy
+  `html2pdf` dynamic import, minimap density gating (`miniDensityDirty`), rAF-throttled scrubber panel,
+  and event delegation. Initial JS ≈918 kB → ≈219 kB (gzip ≈285 → ≈78 kB).
+- **Test suite + CI gating**: extracted the pure data logic into `src/{parse,runs,format,classify}.js`
+  and added Vitest unit tests in `tests/`. CI runs them on every PR (`ci.yml`) and the Pages deploy is
+  **gated** on them passing (`deploy.yml`: `build needs: test`). See §7.
+- Migrated the feedback button to **Web3Forms** (`VITE_WEB3FORMS_KEY`), with the generic-endpoint and
+  download-report fallbacks.
 - Minimap drag made smooth (chart reuse + deferred feed, see §4).
 - Scrubber on by default; drawer always present when on.
 - Panel/timeline overlap fixed (`min-w-0`).
