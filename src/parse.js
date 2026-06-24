@@ -5,6 +5,7 @@
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
   GPM_TO_LPM, PSI_TO_KPA, FLOW_KEYS, PRESSURE_KEYS, NOISE_CATCODES,
+  VALUE_ENUMS,
 } from "./constants.js";
 
 /* ---- Timestamp parsing. Format: MM/dd/yy HH:mm:ss -0600 ---- */
@@ -41,7 +42,7 @@ export function parseRow(cols) {
     if (eq === -1) { extras.push(token); continue; }
     const key = token.slice(0, eq).trim();
     const rawVal = token.slice(eq + 1).trim();
-    let value = rawVal, unit = "", display = rawVal;
+    let value = rawVal, unit = "", display = rawVal, decoded = "";
     const num = parseFloat(rawVal);
     const isNum = rawVal !== "" && !isNaN(num) && /^-?\d*\.?\d+$/.test(rawVal);
 
@@ -51,8 +52,14 @@ export function parseRow(cols) {
       value = num * PSI_TO_KPA; unit = "kPa"; display = value.toFixed(2) + " kPa";
     } else {
       value = isNum ? num : rawVal;
+      // Decode enumerated status/cause/message values (context-scoped by category).
+      const spec = VALUE_ENUMS[key];
+      if (spec && (!spec.cats || spec.cats.includes(catCode))) {
+        const name = spec.map[rawVal];
+        if (name) { decoded = name; display = `${rawVal} — ${name}`; }
+      }
     }
-    pairs[key] = { value, display, unit, raw: rawVal };
+    pairs[key] = { value, display, unit, raw: rawVal, decoded };
   }
 
   const category = CATEGORY_MAP[catCode] || catCode || "—";

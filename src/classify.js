@@ -29,9 +29,14 @@ export const EVENT_GROUPS = [
 ];
 export function eventGroupOf(e) { return EVENT_GROUPS.find(g => g.test(e)) || null; }
 
-// The reason an action was taken: TX message and/or the trailing free-text tokens, else the trigger.
+// The reason an action was taken: decoded message code / start-pause-stop cause,
+// then the TX message and/or trailing free-text tokens, else the trigger.
 export function whyText(e) {
   const parts = [];
+  if (e.pairs.KD && e.pairs.KD.decoded) parts.push(e.pairs.KD.decoded); // Message (MG) code
+  for (const k of ["SC", "PC", "TC"]) {                                  // start / pause / stop cause
+    if (e.pairs[k] && e.pairs[k].decoded) parts.push(e.pairs[k].decoded);
+  }
   if (e.pairs.TX) parts.push(e.pairs.TX.raw);
   for (const x of e.extras) { const s = String(x).replace(/=$/, "").trim(); if (s) parts.push(s); }
   const why = parts.join(" · ");

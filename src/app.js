@@ -17,6 +17,8 @@ import Papa from "papaparse";
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
   FEED_CAP, KEY_INFO, GENERAL_NOTES,
+  STATUS_MAP, EVENT_CAUSE_MAP, MESSAGE_CODE_MAP, MESSAGE_CATEGORY_MAP,
+  MESSAGE_PRIORITY_MAP, OBJECT_KEY_MAP, STOP_CONDITION_MAP, ZONE_MODE_MAP, DATA_GROUPS,
 } from "./constants.js";
 import { showErrorBanner, pushError } from "./errors.js";
 // Pure data logic lives in dependency-free modules (unit-tested in tests/); app.js wires them to the DOM.
@@ -1162,6 +1164,18 @@ function buildReference() {
     </div>
   </div>`;
 
+  // Controller object model index (Data Group → name → object key) — collapsed by default.
+  const dgRows = DATA_GROUPS.slice().sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([dg, name, key]) => `<tr class="border-t border-slate-800"><td class="px-3 py-1 font-mono text-slate-400 align-top">${dg}</td><td class="px-3 py-1 text-slate-300">${escapeHtml(name)}</td><td class="px-3 py-1 font-mono text-sky-300 align-top">${escapeHtml(key)}</td></tr>`).join("");
+  const dgTable = `<details class="group">
+    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Controller object model (Data Groups) <span class="text-slate-500 normal-case">— 3200 MZ spec v19.8.2</span></summary>
+    <div class="border border-slate-800 rounded-lg overflow-hidden mt-2">
+      <table class="w-full text-xs">
+        <thead><tr class="bg-slate-800/80 text-left text-slate-400"><th class="px-3 py-1.5">DG</th><th class="px-3 py-1.5">Object</th><th class="px-3 py-1.5">Key</th></tr></thead>
+        <tbody>${dgRows}</tbody>
+      </table>
+    </div></details>`;
+
   $("refBody").innerHTML =
     notes +
     keyTable +
@@ -1169,7 +1183,20 @@ function buildReference() {
       ${codeTable("Category (Column B)", CATEGORY_MAP)}
       ${codeTable("Action / SubCategory (Column C)", ACTION_MAP)}
       ${codeTable("Trigger / Actor (Column D)", TRIGGER_MAP)}
-    </div>`;
+    </div>` +
+    `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      ${codeTable("Status (ST / SS / LT values)", STATUS_MAP)}
+      ${codeTable("Event Causes (SC / PC / TC values)", EVENT_CAUSE_MAP)}
+      ${codeTable("Stop Conditions", STOP_CONDITION_MAP)}
+    </div>` +
+    `<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      ${codeTable("Message Category (KT)", MESSAGE_CATEGORY_MAP)}
+      ${codeTable("Message Priority (PR on Message events)", MESSAGE_PRIORITY_MAP)}
+      ${codeTable("Zone Mode", ZONE_MODE_MAP)}
+    </div>` +
+    codeTable("Message Codes (KD values)", MESSAGE_CODE_MAP) +
+    codeTable("Object Keys (object-model type — distinct from Column B)", OBJECT_KEY_MAP) +
+    dgTable;
 }
 buildReference();
 

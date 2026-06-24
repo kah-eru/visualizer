@@ -84,6 +84,43 @@ describe("parseRow", () => {
   });
 });
 
+describe("enumerated value decoding (VALUE_ENUMS)", () => {
+  it("decodes a status value (ST) into its display and decoded fields", () => {
+    const e = parseRow(row("06:00:00", "ZN", "ST", "SY", "ST=RN"));
+    expect(e.pairs.ST.decoded).toBe("Running");
+    expect(e.pairs.ST.display).toBe("RN — Running");
+    expect(e.pairs.ST.raw).toBe("RN"); // raw is preserved
+  });
+
+  it("decodes start/pause/stop causes (SC/PC/TC) on any line", () => {
+    const e = parseRow(row("06:00:00", "PG", "SP", "SY", "TC=PD", "PC=RD"));
+    expect(e.pairs.TC.decoded).toBe("Program Done");
+    expect(e.pairs.PC.decoded).toBe("Rain Delay");
+  });
+
+  it("decodes message code/category (KD/KT) only on Message (MG) lines", () => {
+    const e = parseRow(row("06:00:00", "MG", "ST", "SY", "KD=ZN_HFVS", "KT=ZN"));
+    expect(e.pairs.KD.decoded).toBe("Zone High Flow Variance Shutdown");
+    expect(e.pairs.KT.decoded).toBe("Zone");
+  });
+
+  it("treats PR as Message Priority on MG lines but Pressure (kPa) elsewhere", () => {
+    const mg = parseRow(row("06:00:00", "MG", "ST", "SY", "PR=HI"));
+    expect(mg.pairs.PR.decoded).toBe("High");
+
+    const fs = parseRow(row("06:00:00", "FS", "RD", "FS", "PR=60"));
+    expect(fs.pairs.PR.unit).toBe("kPa");          // numeric pressure, not decoded as priority
+    expect(fs.pairs.PR.decoded).toBe("");
+    expect(fs.pairs.PR.value).toBeCloseTo(413.6, 1); // 60 * 6.894
+  });
+
+  it("leaves unknown enum values undecoded (display falls back to raw)", () => {
+    const e = parseRow(row("06:00:00", "ZN", "ST", "SY", "ST=ZZ"));
+    expect(e.pairs.ST.decoded).toBe("");
+    expect(e.pairs.ST.display).toBe("ZZ");
+  });
+});
+
 describe("inferEffectivePrograms", () => {
   it("stamps a zone stop line lacking PG with the program that last ran that zone", () => {
     const events = [

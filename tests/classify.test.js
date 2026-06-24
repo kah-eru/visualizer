@@ -63,6 +63,12 @@ describe("whyText", () => {
   it("falls back to 'by {trigger}' when there's no reason text", () => {
     expect(whyText(row("PG", "SR", "DT", "PG=2"))).toBe("by Date/Time");
   });
+  it("leads with the decoded message code on Message (MG) events", () => {
+    expect(whyText(row("MG", "ST", "SY", "KD=ZN_HFVS"))).toBe("Zone High Flow Variance Shutdown");
+  });
+  it("includes decoded start/stop causes", () => {
+    expect(whyText(row("PG", "SP", "SY", "TC=PD"))).toBe("Program Done");
+  });
 });
 
 describe("subjectSummary", () => {

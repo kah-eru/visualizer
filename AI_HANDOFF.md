@@ -76,7 +76,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-06-23)
+## Current state (as of 2026-06-24)
 
 - **Version:** 1.0.0. **Branch:** `main`. Working tree clean at handoff.
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
@@ -87,7 +87,14 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Docs sync** (`e261d78`) — brought `NOTES.md` up to date with the items below.
+1. **3200 MZ object-spec integration** (uncommitted) — added the vendor spec at
+   `docs/object-definitions-19.8.2.html` + distilled `docs/OBJECT_DEFINITIONS.md`; transcribed its
+   enumerations into `src/constants.js` (Status, Event Causes, Message Codes/Category/Priority, Object
+   Keys, Stop Conditions, Zone Mode, Data-Group index); added the context-scoped `VALUE_ENUMS` registry
+   so `parse.js` decodes enumerated values (`ST`/`SC`/`PC`/`TC`/`KD`/`KT`, with `PR` scoped to `MG`);
+   `whyText` now leads with decoded message codes/causes; glossary modal gained the new reference tables
+   + a collapsible object-model section. New Vitest cases cover decoding + context-scoping.
+2. **Docs sync** (`e261d78`) — brought `NOTES.md` up to date with the items below.
 2. **Vitest suite + CI gating** (`a334545`) — extracted pure logic into 4 modules; added tests; deploy
    now gated on them.
 3. **Performance pass** (`2ce456b`) — slim Chart.js register, lazy `html2pdf` import, minimap density

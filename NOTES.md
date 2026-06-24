@@ -12,7 +12,12 @@ Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — 
 - **`index.html`** — markup only; loads `/src/main.js` as a module.
 - **`src/styles.css`** — `@import "tailwindcss";` + the app's custom CSS (was the inline `<style>`).
 - **`src/constants.js`** — mapping tables, `KEY_INFO`, `GENERAL_NOTES`, `NOISE_CATCODES`, flow/pressure
-  key sets, conversion consts, `FEED_CAP` (all pure data, exported).
+  key sets, conversion consts, `FEED_CAP` (all pure data, exported). Also the **3200 MZ object-spec
+  enumerations** (`STATUS_MAP`, `EVENT_CAUSE_MAP`, `MESSAGE_CODE_MAP`, `MESSAGE_CATEGORY_MAP`,
+  `MESSAGE_PRIORITY_MAP`, `OBJECT_KEY_MAP`, `STOP_CONDITION_MAP`, `ZONE_MODE_MAP`, `DATA_GROUPS`) plus the
+  **context-scoped value-decode registry** `VALUE_ENUMS` (decodes enumerated `key=value` *values* like
+  `ST`/`SC`/`KD`; ambiguous keys such as `PR` are scoped to the `MG` category). Source of truth for these
+  is `docs/object-definitions-19.8.2.html`, distilled in `docs/OBJECT_DEFINITIONS.md`.
 - **`src/app.js`** — the dashboard core (filter → render → swimlane/scrubber/feed/minimap + all event
   wiring + DOM glue). Kept as one module on purpose: the render code is tightly coupled and shares mutable
   state via module-local `let`s. Registers just the Chart.js pieces it uses (not `chart.js/auto`), imports
