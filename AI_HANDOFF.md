@@ -87,7 +87,15 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **3200 MZ object-spec integration** (uncommitted) — added the vendor spec at
+1. **Manual runs now visible on the timeline** (uncommitted) — the controller logs a manual zone run as
+   `ZN,MR,…,PG=MR` (action `MR`, no `WT` line), so `buildRunIntervals` (which only opened zone runs on
+   `WT`) built no interval and manual zones were invisible. Added `MR` to the zone start set
+   (`src/runs.js`); manual bars now keep their zone color plus an amber inset border + "M" badge
+   (`barHTML` in `app.js`, `.run-manual-mark`/`.run-manual-badge` in `styles.css`); `CATEGORY_MAP` gained
+   `MR:"Manual Run"`; legend updated. New `runs.test.js` cases cover manual (`MR→DN`) vs scheduled
+   (`WT→DN`). Verified in-browser against a real log: zone 118 now shows as manual in the bar + the
+   "running now" panel. (Real log `testmanual.csv` is gitignored — never commit it.)
+2. **3200 MZ object-spec integration** (`2cdb619`) — added the vendor spec at
    `docs/object-definitions-19.8.2.html` + distilled `docs/OBJECT_DEFINITIONS.md`; transcribed its
    enumerations into `src/constants.js` (Status, Event Causes, Message Codes/Category/Priority, Object
    Keys, Stop Conditions, Zone Mode, Data-Group index); added the context-scoped `VALUE_ENUMS` registry

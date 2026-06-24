@@ -70,6 +70,28 @@ describe("buildRunIntervals — zone mode (ZN WT → DN)", () => {
     expect(runs.find(r => r.key === "1").end).toBe(ms("06:20:00"));
     expect(runs.find(r => r.key === "2").end).toBe(ms("06:25:00"));
   });
+
+  it("builds a manual zone run from MR→DN and flags it manual (controller logs ZN,MR,…,PG=MR)", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "MR", "SY", "ZN=12", "PG=MR")),
+      parseRow(row("06:05:00", "ZN", "DN", "SY", "ZN=12")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ key: "12", kind: "run-manual", manual: true });
+    expect(runs[0].start).toBe(ms("06:00:00"));
+    expect(runs[0].end).toBe(ms("06:05:00"));
+  });
+
+  it("keeps a scheduled WT→DN zone run non-manual", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=13", "PG=13")),
+      parseRow(row("06:30:00", "ZN", "DN", "SY", "ZN=13")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ key: "13", kind: "run-scheduled", manual: false });
+  });
 });
 
 describe("buildRunIntervals — mainline mode (ML RN → OF)", () => {

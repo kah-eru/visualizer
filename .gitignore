@@ -11,5 +11,9 @@ dist/
 # Local backup artifact (history is in git)
 index.html.bak
 
+# Real controller logs must never be committed (privacy). Synthetic test data
+# (Evnt_flow_test.csv) is the only log allowed in the repo.
+testmanual.csv
+
 # Personal (per-machine) Claude Code settings; shared settings live in .claude/settings.json
 .claude/settings.local.json

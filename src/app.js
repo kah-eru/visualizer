@@ -460,10 +460,13 @@ function barHTML(iv, xOf, range, word, fill) {
   const dur = fmtDuration(iv.end - iv.start);
   const sTxt = fmtTime(iv.start, span), eTxt = iv.ongoing ? "ongoing" : fmtTime(iv.end, span);
   const extra = (word === "Zone" && iv.program != null) ? ` · prog ${iv.program}` : "";
-  const note = iv.kind === "run-terminated" ? " — stopped early (pause/alarm)" : (iv.ongoing ? " — ongoing" : "");
+  const note = (iv.kind === "run-terminated" ? " — stopped early (pause/alarm)" : (iv.ongoing ? " — ongoing" : "")) + (iv.manual ? " · manual" : "");
   const title = `${word} ${iv.key}${extra}: ${sTxt} → ${eTxt} (${dur})${note}`;
-  const cls = fill ? "" : iv.kind;
+  // With a fill (zone color) we drop the status background class, but still flag manual runs with an
+  // amber inset border + "M" badge so they're distinguishable from scheduled runs of the same color.
+  const cls = (fill ? "" : iv.kind) + (iv.manual ? " run-manual-mark" : "");
   const hatch = (fill && (iv.kind === "run-terminated" || iv.ongoing)) ? " run-hatch" : "";
+  const badge = iv.manual ? `<span class="run-manual-badge" title="Manual run">M</span>` : "";
   let style = `left:${x1}px;width:${width}px;` + (fill ? `background:${fill};` : "");
   // does the bar have room for "start  end" (≈6px/char + padding clear of the corner triangles)?
   const needTimes = (sTxt.length + eTxt.length) * 6 + 22;
@@ -479,7 +482,7 @@ function barHTML(iv, xOf, range, word, fill) {
     ? `<span class="tl-jump tl-jump-start" data-to="${iv.end}" title="Jump to end (${escapeHtml(eTxt)})"></span>` +
       `<span class="tl-jump tl-jump-end" data-to="${iv.start}" title="Jump to start (${escapeHtml(sTxt)})"></span>`
     : "";
-  return `<div class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" style="${style}" title="${escapeHtml(title)}">${inner}${jumps}</div>`;
+  return `<div class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" style="${style}" title="${escapeHtml(title)}">${inner}${badge}${jumps}</div>`;
 }
 
 function renderSwimlane(range, attempt) {

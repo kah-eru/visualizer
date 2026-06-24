@@ -31,7 +31,8 @@ export function buildRunIntervals(evs, mode, globalEnd) {
       for (const z of e.zones) (groups[z] = groups[z] || []).push(e);
     }
   }
-  const startSet = mode === "program" ? RUN_START : mode === "mainline" ? new Set(["RN"]) : new Set(["WT"]);
+  // Zone runs open on WT (scheduled) or MR (manual run — logged as `ZN,MR,…,PG=MR`, no WT line).
+  const startSet = mode === "program" ? RUN_START : mode === "mainline" ? new Set(["RN"]) : new Set(["WT", "MR"]);
   const stopSet  = mode === "program" ? RUN_STOP  : mode === "mainline" ? new Set(["OF"]) : new Set(["DN"]);
   const out = [];
   for (const key of Object.keys(groups)) {

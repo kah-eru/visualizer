@@ -76,6 +76,10 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .run-scheduled { background:#22c55e; }
 .run-manual { background:#f59e0b; }
 .run-terminated { background:#ef4444; background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.28) 4px, rgba(0,0,0,0.28) 8px); }
+/* manual run: amber inset border (survives any background fill) + small "M" badge */
+.tl-bar.run-manual-mark { box-shadow: inset 0 0 0 2px #f59e0b; }
+.run-manual-badge { position:absolute; right:2px; bottom:1px; z-index:4; pointer-events:none;
+  font-size:8px; line-height:1; font-weight:700; color:#1f2937; background:#f59e0b; border-radius:3px; padding:1px 3px; }
 /* vertical pin dropped on the swimlane from the audit feed */
 #swimPin { position:absolute; top:0; bottom:0; width:2px; background:#38bdf8; box-shadow:0 0 6px #38bdf8; pointer-events:none; z-index:5; display:none; }
 /* audit feed severity accents */
