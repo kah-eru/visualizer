@@ -242,6 +242,14 @@ index.html
   - **mainline:** `ML` RN → OF
   - A `PA` (pause) or `DR` (drop) closes an open run as **terminated** (red hatch).
   - An unclosed run at the end of data is **ongoing** (hatch, "ongoing" label).
+  - **Zone no-`DN` inference** (`closeOpenZoneRun` in `runs.js`): a faulted zone can keep getting
+    commanded with no `DN`, which used to render as *ongoing to end-of-log* (e.g. a 3-min run shown as
+    53h). For zone mode only, an unclosed run is now closed from the controller's own **run-list
+    heartbeat**: Tier 1 — if the zone last appeared in a `ZN,RL` line before a *later* run-list that
+    drops it, close at that last heartbeat; Tier 2 — if it never appeared in any run-list, fall back to
+    the first `MV`/`PM` `DN` (supply cut) after it started; Tier 3 — otherwise (still in the final
+    run-list) it stays **ongoing**. Tiers 1–2 mark the run `terminated` + `inferred:true`, and `barHTML`
+    shows "ended early (no DONE logged; inferred from run list)". Programs/mainlines are unchanged.
 - Run color: scheduled = green, manual = amber, terminated = red. Manual is detected via
   `actCode==="MR"` or trigger User/Operator. Zone/mainline bars use a per-key color with a status hatch overlay.
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).

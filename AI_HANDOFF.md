@@ -76,7 +76,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-06-24)
+## Current state (as of 2026-06-26)
 
 - **Version:** 1.0.0. **Branch:** `main`. Working tree clean at handoff.
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
@@ -87,7 +87,25 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Manual runs now visible on the timeline** (uncommitted) — the controller logs a manual zone run as
+1. **In-app "How to use" guide + doc** (uncommitted) — added a header **How to use** button
+   (`#guideBtn`) opening a `#guideModal` walkthrough (numbered getting-started steps, a panes overview,
+   and a plain-language tour of every sidebar filter), built by `buildGuide()` in `src/app.js` reusing
+   the Reference-modal show/hide/Esc pattern. Static HTML (no data needed), styled with the existing
+   Tailwind classes. Mirrored in `docs/HOW_TO_USE.md` for GitHub readers. Verified in-browser (renders,
+   color swatches correct, no new console errors).
+2. **Zone runs that never log a `DN` now close at their real end** (uncommitted) — a faulted zone can
+   keep being commanded with no `ZN,DN`, which used to render as *ongoing to end-of-log* (a colleague
+   saw a ~20-min run shown as **53h 58m**). `buildRunIntervals` now infers the end of an unclosed
+   **zone** run from the controller's run-list heartbeat (`closeOpenZoneRun` in `src/runs.js`):
+   Tier 1 = last `ZN,RL` that listed the zone before a later run-list dropped it; Tier 2 = first
+   `MV`/`PM` `DN` after start if the zone never appeared in a run-list; Tier 3 = still in the final
+   run-list → stays ongoing. Tiers 1–2 mark the run `terminated` + a new `inferred:true` flag; `barHTML`
+   (`app.js`) shows "ended early (no DONE logged; inferred from run list)" and reuses the terminated
+   hatch (no new CSS). Zones only — programs/mainlines unchanged. New `runs.test.js` cases cover all
+   three tiers. Verified against the real `Evnt_202606.csv`: zone 1's 06/22 run now ends 10:23 (was
+   53h 58m), and the genuinely-ongoing zone 2 at end-of-log still reads ongoing. (Real monthly logs
+   `Evnt_2*.csv` are now gitignored — never commit them.)
+2. **Manual runs now visible on the timeline** (`8f2b4e6`) — the controller logs a manual zone run as
    `ZN,MR,…,PG=MR` (action `MR`, no `WT` line), so `buildRunIntervals` (which only opened zone runs on
    `WT`) built no interval and manual zones were invisible. Added `MR` to the zone start set
    (`src/runs.js`); manual bars now keep their zone color plus an amber inset border + "M" badge

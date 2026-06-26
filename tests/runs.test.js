@@ -92,6 +92,44 @@ describe("buildRunIntervals — zone mode (ZN WT → DN)", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ key: "13", kind: "run-scheduled", manual: false });
   });
+
+  it("closes a no-DN zone at its last run-list heartbeat when a later run-list drops it (Tier 1)", () => {
+    // ZN 1 starts, appears in run-list through 06:03, then a later run-list lists only ZN 2 → ZN 1 left.
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "PG=9")),
+      parseRow(row("06:01:00", "ZN", "RL", "SY", "ZN=1;2")),
+      parseRow(row("06:03:00", "ZN", "RL", "SY", "ZN=1;2")),
+      parseRow(row("06:10:00", "ZN", "RL", "SY", "ZN=2")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    const z1 = runs.find(r => r.key === "1");
+    expect(z1).toMatchObject({ kind: "run-terminated", inferred: true, ongoing: false });
+    expect(z1.end).toBe(ms("06:03:00")); // last run-list that named ZN 1, not GLOBAL_END
+  });
+
+  it("keeps a no-DN zone ongoing when it is still in the final run-list (Tier 3)", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "PG=9")),
+      parseRow(row("06:01:00", "ZN", "RL", "SY", "ZN=1")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    const z1 = runs.find(r => r.key === "1");
+    expect(z1.ongoing).toBe(true);
+    expect(z1.inferred).toBe(false);
+    expect(z1.end).toBe(GLOBAL_END);
+  });
+
+  it("falls back to MV/PM shutdown for a no-DN zone never seen in a run-list (Tier 2)", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "PG=9")),
+      parseRow(row("06:08:00", "MV", "DN", "SY", "ZN=204")),
+      parseRow(row("06:08:00", "PM", "DN", "SY", "ZN=237")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    const z1 = runs.find(r => r.key === "1");
+    expect(z1).toMatchObject({ kind: "run-terminated", inferred: true, ongoing: false });
+    expect(z1.end).toBe(ms("06:08:00"));
+  });
 });
 
 describe("buildRunIntervals — mainline mode (ML RN → OF)", () => {

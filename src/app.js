@@ -460,7 +460,9 @@ function barHTML(iv, xOf, range, word, fill) {
   const dur = fmtDuration(iv.end - iv.start);
   const sTxt = fmtTime(iv.start, span), eTxt = iv.ongoing ? "ongoing" : fmtTime(iv.end, span);
   const extra = (word === "Zone" && iv.program != null) ? ` · prog ${iv.program}` : "";
-  const note = (iv.kind === "run-terminated" ? " — stopped early (pause/alarm)" : (iv.ongoing ? " — ongoing" : "")) + (iv.manual ? " · manual" : "");
+  const note = (iv.inferred ? " — ended early (no DONE logged; inferred from run list)"
+    : iv.kind === "run-terminated" ? " — stopped early (pause/alarm)"
+    : iv.ongoing ? " — ongoing" : "") + (iv.manual ? " · manual" : "");
   const title = `${word} ${iv.key}${extra}: ${sTxt} → ${eTxt} (${dur})${note}`;
   // With a fill (zone color) we drop the status background class, but still flag manual runs with an
   // amber inset border + "M" badge so they're distinguishable from scheduled runs of the same color.
@@ -1210,6 +1212,69 @@ $("refBtn").addEventListener("click", openRef);
 $("refClose").addEventListener("click", closeRef);
 refModal.addEventListener("click", e => { if (e.target === refModal) closeRef(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !refModal.classList.contains("hidden")) closeRef(); });
+
+/* ============================ How-to-use guide (in-app walkthrough) ============================ */
+function buildGuide() {
+  const swatch = (c) => `<span class="inline-block w-2.5 h-2.5 rounded-sm align-middle" style="background:${c}"></span>`;
+  const step = (n, title, body) => `<div class="flex gap-3">
+    <div class="flex-shrink-0 w-6 h-6 rounded-full bg-sky-500 text-slate-900 font-bold text-xs flex items-center justify-center">${n}</div>
+    <div class="min-w-0"><h4 class="text-sm font-semibold text-white mb-1">${title}</h4><div class="text-slate-300 text-xs space-y-1">${body}</div></div>
+  </div>`;
+  const sec = (title, body) => `<div><h4 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">${title}</h4>${body}</div>`;
+  const li = (items) => `<ul class="list-disc pl-5 space-y-1 text-slate-300 text-xs">${items.map(i => `<li>${i}</li>`).join("")}</ul>`;
+
+  $("guideBody").innerHTML =
+    `<p class="text-slate-300 text-xs leading-relaxed">This tool turns a Baseline controller event log
+       (<span class="font-mono text-sky-300">Evnt_yyyyMM.csv</span>) into a visual timeline so you can see
+       <em>what ran, when, for how long, scheduled or manual, and why anything stopped</em>.
+       <span class="text-emerald-400">Everything stays in your browser</span> — your file is never uploaded anywhere.</p>` +
+
+    sec("Getting started", `<div class="space-y-3">
+      ${step(1, "Load your log", `Drag a <span class="font-mono text-sky-300">.csv</span> onto the <b>Data Source</b> box (top-left) or click it to browse. The dashboard fills in instantly.`)}
+      ${step(2, "Read the timeline", `The <b>Execution Timeline</b> shows one bar per run, grouped into lanes for programs, zones and mainlines.
+        Bar colors: ${swatch("#22c55e")} scheduled &nbsp; ${swatch("#f59e0b")} manual (amber border + “M”) &nbsp; ${swatch("#ef4444")} stopped early by a pause/alarm.
+        A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list. <b>Click any bar</b> to zoom into it.`)}
+      ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span) or the <b>Window</b> presets
+        (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
+      ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart (only when the file has that telemetry), and <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand it and pin it on the timeline.`)}
+    </div>`) +
+
+    sec("The panes, top to bottom", li([
+      `<b>Stat strip</b> — events in the current window, active alerts, and run count.`,
+      `<b>Execution Timeline</b> — the swimlane of runs + minimap + (optional) flow chart.`,
+      `<b>Interventions &amp; Alerts</b> — pauses, disables, status changes, and alarms, with the “why”.`,
+      `<b>Activity Audit Feed</b> — the full searchable event list; alarms are pinned on top.`,
+    ])) +
+
+    sec("Filters (left sidebar)", li([
+      `<b>Date / Time Range</b> — limit everything to a From–To window.`,
+      `<b>Show on timeline</b> — pick which <b>Programs</b>, <b>Zones</b> and <b>Mainlines</b> get their own lanes (zones start empty — choose the ones you care about).`,
+      `<b>Run type</b> — show/hide ${swatch("#22c55e")} scheduled and ${swatch("#f59e0b")} manual runs; <b>Alert markers</b> toggles the ${swatch("#ef4444")} alarm ticks.`,
+      `<b>Human audit only</b> — keep just person-initiated actions (User / Administrator) to separate people from the system.`,
+      `<b>SubStation</b> — isolate one substation.`,
+      `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
+      `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,
+      `<b>More filters</b> — narrow by Zone, Category, Action, Trigger/Actor, or a minimum flow rate.`,
+      `<b>Advanced → low-level system events</b> — off by default; turn on to include substation, network, two-wire and message chatter.`,
+      `<b>Reset Filters</b> — back to the default view.`,
+    ])) +
+
+    sec("Exporting & reference", li([
+      `<b>Controller ID</b> (top-right) is stamped onto the PDF.`,
+      `<b>Download PDF</b> exports the current dashboard view exactly as shown.`,
+      `<b>Reference</b> opens the code glossary — what every Category/Action/Trigger, status, cause and message code means.`,
+    ]));
+}
+buildGuide();
+
+const guideModal = $("guideModal");
+function openGuide() { guideModal.classList.remove("hidden"); }
+function closeGuide() { guideModal.classList.add("hidden"); }
+$("guideBtn").addEventListener("click", openGuide);
+$("guideClose").addEventListener("click", closeGuide);
+guideModal.addEventListener("click", e => { if (e.target === guideModal) closeGuide(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !guideModal.classList.contains("hidden")) closeGuide(); });
 
 /* ============================ PDF export (WYSIWYG + Controller ID / timeframe stamp) ============================ */
 $("pdfBtn").addEventListener("click", async () => {
