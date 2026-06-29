@@ -77,7 +77,7 @@ below for the user's stated priorities.)
 
 ### Tech stack (Vite/npm build; deps bundled, not CDN)
 - **Chart.js 4.4.1** — the hydraulic line chart. Critically, it also **owns the shared X (time) scale**
-  that the swimlane bars, event markers, gridlines, scrubber, and pins all align to via
+  that the swimlane bars, event markers, gridlines, and scrubber all align to via
   `hydroChart.scales.x.getPixelForValue(ms)` / `getValueForPixel(px)`. Imported slim — only the pieces it
   uses are `Chart.register(...)`ed (not `chart.js/auto`). See §4.
 - **PapaParse 5.4.1** — CSV parsing (`worker:false` because workers are blocked under `file://`).
@@ -127,7 +127,7 @@ program. (This is non-obvious; see the `visualizer-program-inference` memory.)
 
 ### (a) Chart.js owns the time axis; everything else is positioned against it
 There is no separate time-scale math. The swimlane, the event timeline, the alert ticks, the
-gridlines, the scrubber playhead, and the feed-pin all call
+gridlines, and the scrubber playhead all call
 `hydroChart.scales.x.getPixelForValue(ms)` and read `hydroChart.chartArea.left/right`. The chart has a
 fixed **52px left layout padding** (`layout.padding.left:52` in `buildHydroChart`, ≈L942) so the
 swimlane lane labels have a consistent gutter to live in and bars line up under the chart.
@@ -222,7 +222,7 @@ index.html
     ├── hydro chart: buildHydroChart / applyHydroView / renderHydro (≈L903–967)
     ├── swimlane: RUN_START/RUN_STOP, makeRun, buildRunIntervals, barHTML, renderSwimlane (≈L969–1171)
     ├── event timeline: EVENT_GROUPS, whyText, renderEventTimeline (≈L1173–1243)
-    ├── feed focus + pin: focusFeedEvent, positionPin/pinAt (≈L1245–1266)
+    ├── feed focus: focusFeedEvent / flashFeedRow (≈L1245–1266)
     ├── scrubber: visibleRunsAt, snapTime, positionPlayhead, updateScrubPanel (≈L1268–1365)
     ├── audit feed: isDurationMarker, feedSeverity, feedRowHTML, renderFeed (≈L1367–1415)
     ├── helpers: escapeHtml, fmtTime, fmtDuration, subjectSummary (≈L1417–1455)
@@ -265,14 +265,14 @@ index.html
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).
   Default: programs & mainlines **all**, zones **none**. Programs are expandable to their zones (click the label).
 - Each bar: click body → `zoomTo` that run; corner triangles → `panToTime` the other end at the same zoom.
-- Red alert ticks (`.alert-mark`) sit above the lanes; click → `pinAt` + `focusFeedEvent`.
+- Red alert ticks (`.alert-mark`) sit above the lanes; click → `jumpTo` (scroll/expand/flash the feed row).
 
 ### Interventions & Alerts timeline (`renderEventTimeline`, ≈L1195) — toggle `eventTlOn`, OFF by default
 - Separate card (`#eventTlCard`). Groups events into `EVENT_GROUPS` (≈L1176): Alarms, Pause, Disable,
   Skip/Drop, Config, Status/Set. First matching group wins.
 - Diamond markers per event; tooltip and the scrubber panel use **`whyText(e)`** (≈L1187): the `TX`
   message plus any `extras` tokens (that's where alarm reasons live), else "by {trigger}".
-- Click a marker → pin + jump to it in the feed.
+- Click a marker → `jumpTo` (scroll/expand/flash the matching feed row).
 
 ### Scrubber (`positionPlayhead`/`updateScrubPanel`, ≈L1300/1313) — ON by default
 - Draggable amber playhead over the timeline; optional snap-to-run-edges (`snapTime`, ≈L1285, ~8px tolerance).
@@ -299,7 +299,7 @@ index.html
   are drawn as swimlane bars.
 - Alarms pinned on top, then chronological. Severity left-border accent via `feedSeverity`.
 - Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
-- Click a row → expand detail (chips + raw CSV line) and drop a pin on the timeline.
+- Click a row → expand detail (chips + raw CSV line).
 
 ### Minimap (≈L1588+)
 - Full-data-span overview with a draggable/resizable view-window box. Canvas density bins + red alert

@@ -37,7 +37,7 @@ The same walkthrough is available inside the app — click **How to use** in the
    when the file has that telemetry), and **Events** to add a separate **Interventions & Alerts** lane
    (click any marker for the reason), and **Soak** (on by default) to split cycle-and-soak zones into
    watering vs. soak segments. Scroll to the **Activity Audit Feed** for every raw event — click a row
-   to expand it and pin it on the timeline.
+   to expand its raw detail.
 
 ---
 

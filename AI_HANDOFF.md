@@ -87,7 +87,14 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Cycle-and-soak zone runs are split into watering vs soak segments** (uncommitted) — a zone waters
+1. **Removed the swimlane event-pin** (uncommitted) — the blue vertical `#swimPin` line dropped on the
+   timeline when clicking a feed row / alert tick / event marker / panel item was confusable with the
+   amber scrubber playhead and added little, so it's gone. Deleted `pinnedTs`, `positionPin`, `pinAt`,
+   the `#swimPin` element + CSS; `jumpTo` now just `focusFeedEvent` (scroll/expand/flash the feed row),
+   and feed-row clicks just expand detail. Updated the legend / feed heading / in-app guide / `NOTES.md`
+   wording. 71 tests still green; verified in-browser (feed + marker clicks work, no pin, no console
+   errors).
+2. **Cycle-and-soak zone runs are split into watering vs soak segments** (`3c77415`) — a zone waters
    in cycles separated by soaks (`ZN,WT` water → `ZN,SO` soak begins → next `ZN,WT` ends the soak →
    … → `DN`/`PA`); previously the whole span rendered as one solid bar (e.g. a real ~60-min watering run
    shown as a 2-hour block). `buildRunIntervals` still emits **one run envelope** (no-`DN` inference,

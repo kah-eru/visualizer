@@ -377,7 +377,6 @@ function updateNavControls(range) {
   });
 }
 
-let pinnedTs = null; // timestamp of the feed-event pin dropped on the swimlane
 let expandedPrograms = new Set(); // program keys whose zone drop-down is open (program lane view)
 // Run start/done rows are normally hidden from the feed (drawn as bars). When the user clicks a
 // "Running now" item in the scrubber panel, we force-show that specific event's raw row here.
@@ -632,7 +631,6 @@ function renderSwimlane(range, attempt) {
       if (bar) { ev.stopPropagation(); zoomTo(Number(bar.getAttribute("data-start")), Number(bar.getAttribute("data-end")) + 1); }
     });
   }
-  positionPin();
   positionPlayhead();
 }
 
@@ -704,11 +702,10 @@ function focusFeedEvent(ts) {
 }
 // Jump to a specific run's start event from the "Running now" panel. Its raw row is normally hidden
 // (start/done are drawn as bars), so force-show it, bring it into the window if it's off-screen,
-// pin the timeline at it, then expand/flash the row.
+// then expand/flash the row.
 function revealRunStart(e) {
   if (!e) return;
   const ts = e.ts.getTime();
-  pinAt(ts);
   if (isDurationMarker(e)) revealedFeedIds.add(e._id);
   const r = currentRange();
   if (ts < r.start || ts >= r.end) panToTime(ts); // off-screen → center the view on it (re-renders)
@@ -725,18 +722,8 @@ function findRunStartEvent(group, key, startMs) {
     : false));
 }
 
-// vertical pin dropped from the audit feed
-function positionPin() {
-  const pin = $("swimPin");
-  const xScale = chartX();
-  const r = currentRange();
-  if (pinnedTs == null || !xScale || pinnedTs < r.start || pinnedTs > r.end) { pin.style.display = "none"; return; }
-  pin.style.left = xScale.getPixelForValue(pinnedTs) + "px";
-  pin.style.display = "block";
-}
-function pinAt(ms) { pinnedTs = ms; positionPin(); }
-// pin on the timeline + scroll/expand/flash the matching feed row (shared by all marker clicks)
-function jumpTo(ts) { pinAt(ts); focusFeedEvent(ts); }
+// scroll/expand/flash the matching feed row (shared by all marker clicks)
+function jumpTo(ts) { focusFeedEvent(ts); }
 
 /* ---- Scrubber playhead + right-edge "what's running" panel ---- */
 let playheadOn = false, playheadSnap = true, playheadTime = null;
@@ -898,7 +885,6 @@ function renderFeed(inWin) {
       const idx = row.getAttribute("data-idx");
       const d = host.querySelector(`[data-fdetail="${idx}"]`);
       if (d) d.classList.toggle("hidden");
-      pinAt(Number(row.getAttribute("data-tsms")));
     });
   }
   $("feedInfo").textContent = ordered.length > FEED_CAP
@@ -937,7 +923,7 @@ $("resetBtn").addEventListener("click", () => {
   $("flowValue").textContent = "0";
   $("varMin").value = 0; $("varMinVal").textContent = "0%";
   $("varMax").value = 100; $("varMaxVal").textContent = "100%";
-  zoomStack = []; pinnedTs = null; expandedPrograms.clear();
+  zoomStack = []; expandedPrograms.clear();
   // back to the default: the calendar day containing the last event
   windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT, { min: dataMinT, max: dataMaxT });
   applyFilters();
@@ -1307,7 +1293,7 @@ function buildGuide() {
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
         <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log line (it scrolls, expands and flashes it). <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart (only when the file has that telemetry), and <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand it and pin it on the timeline.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart (only when the file has that telemetry), and <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail.`)}
     </div>`) +
 
     sec("The panes, top to bottom", li([
