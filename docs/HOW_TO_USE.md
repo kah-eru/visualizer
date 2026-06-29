@@ -26,8 +26,10 @@ The same walkthrough is available inside the app — click **How to use** in the
    presets (`All · Month · Week · Day · Hour · Min · Sec`). **◀ / ▶** step one window at a time, **Back**
    undoes a zoom, and the **← / →** arrow keys also step.
 4. **Inspect a moment.** Keep **Scrubber** on and drag the playhead — the **“At Playhead”** panel on the
-   right lists exactly what was running at that instant. **Snap** makes the playhead jump to run
-   start/stop edges.
+   right lists exactly what was running at that instant. **Click any item in that panel** — a running
+   program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log
+   line (it scrolls, expands and flashes it; the view pans to it if it’s outside the current window).
+   **Snap** makes the playhead jump to run start/stop edges.
 5. **Dig into the detail.** Toggle **Flow** to overlay the hydraulic flow/pressure chart (shown only
    when the file has that telemetry), and **Events** to add a separate **Interventions & Alerts** lane
    (click any marker for the reason). Scroll to the **Activity Audit Feed** for every raw event — click

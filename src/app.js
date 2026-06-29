@@ -123,9 +123,10 @@ function handleFile(file) {
       try {
         const rows = results.data;
         allEvents = [];
+        revealedFeedIds.clear(); // new file → drop any force-shown rows from the previous one
         for (const cols of rows) {
           const ev = parseRow(cols);
-          if (ev) allEvents.push(ev);
+          if (ev) { ev._id = allEvents.length; allEvents.push(ev); } // stable id for feed row lookup
         }
         onDataLoaded();
       } catch (err) {
@@ -377,6 +378,9 @@ function updateNavControls(range) {
 
 let pinnedTs = null; // timestamp of the feed-event pin dropped on the swimlane
 let expandedPrograms = new Set(); // program keys whose zone drop-down is open (program lane view)
+// Run start/done rows are normally hidden from the feed (drawn as bars). When the user clicks a
+// "Running now" item in the scrubber panel, we force-show that specific event's raw row here.
+let revealedFeedIds = new Set();
 
 /* ---- Component B: Hydraulic overlay (Chart.js line, provides the shared X scale) ---- */
 // Rebuild the Chart.js instance from the full `filtered` telemetry. Only needed when `filtered` changes
@@ -662,16 +666,41 @@ function renderEventTimeline(range, attempt) {
   $("eventTlInfo").textContent = total ? `— ${total.toLocaleString()} in view` : "";
 }
 
-// scroll the audit feed to the event at `ts`, expand and flash it
-function focusFeedEvent(ts) {
+// expand a feed row's detail, scroll it into view, and flash it
+function flashFeedRow(row) {
   const host = $("auditFeed");
-  const row = host.querySelector(`.feed-row[data-tsms="${ts}"]`);
-  if (!row) return;
   const d = host.querySelector(`[data-fdetail="${row.getAttribute("data-idx")}"]`);
   if (d) d.classList.remove("hidden");
   row.scrollIntoView({ behavior: "smooth", block: "center" });
   row.classList.add("feed-flash");
   setTimeout(() => row.classList.remove("feed-flash"), 1400);
+}
+// scroll the audit feed to the event at `ts`, expand and flash it
+function focusFeedEvent(ts) {
+  const row = $("auditFeed").querySelector(`.feed-row[data-tsms="${ts}"]`);
+  if (row) flashFeedRow(row);
+}
+// Jump to a specific run's start event from the "Running now" panel. Its raw row is normally hidden
+// (start/done are drawn as bars), so force-show it, bring it into the window if it's off-screen,
+// pin the timeline at it, then expand/flash the row.
+function revealRunStart(e) {
+  if (!e) return;
+  const ts = e.ts.getTime();
+  pinAt(ts);
+  if (isDurationMarker(e)) revealedFeedIds.add(e._id);
+  const r = currentRange();
+  if (ts < r.start || ts >= r.end) panToTime(ts); // off-screen → center the view on it (re-renders)
+  else render();                                   // in view → rebuild the feed with the revealed row
+  const row = $("auditFeed").querySelector(`.feed-row[data-eid="${e._id}"]`);
+  if (row) flashFeedRow(row);
+}
+// Resolve a visible run (group + key + start ms) back to its raw start event in `filtered`.
+function findRunStartEvent(group, key, startMs) {
+  return filtered.find(e => e.ts.getTime() === startMs && (
+    group === "Zone" ? (e.catCode === "ZN" && (e.actCode === "WT" || e.actCode === "MR") && e.zones.includes(String(key)))
+    : group === "Program" ? (e.catCode === "PG" && RUN_START.has(e.actCode) && String(e.program) === String(key))
+    : group === "Mainline" ? (e.catCode === "ML" && e.actCode === "RN" && String(e.mainline) === String(key))
+    : false));
 }
 
 // vertical pin dropped from the audit feed
@@ -746,9 +775,10 @@ function updateScrubPanel() {
     .sort((a, b) => a.group.localeCompare(b.group) || numCmp(a.key, b.key));
   const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${c}"></span>`;
   let runHTML = active.length
-    ? active.map(iv => `<div class="flex items-baseline gap-1 py-0.5">${dot(iv.color)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
+    ? active.map(iv => `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="Show this run's start in the audit feed">
+        <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
         <span class="text-slate-500 text-xs ml-auto">${escapeHtml(fmtTime(iv.start, span))}→${iv.ongoing ? "…" : escapeHtml(fmtTime(iv.end, span))}</span></div>
-        <div class="text-[10px] text-slate-500 pl-4 pb-1">${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run${iv.kind === "run-terminated" ? " · stopped early" : iv.manual ? " · manual" : ""}</div>`).join("")
+        <div class="text-[10px] text-slate-500 pl-4 pb-1">${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run${iv.kind === "run-terminated" ? " · stopped early" : iv.manual ? " · manual" : ""}</div></div>`).join("")
     : `<div class="text-slate-500 text-xs">Nothing running.</div>`;
 
   // flow/pressure carry-forward (latest sample at/before t in window)
@@ -792,6 +822,11 @@ function updateScrubPanel() {
   if (!body._delegated) {
     body._delegated = true;
     body.addEventListener("click", ev => {
+      const run = ev.target.closest(".scrub-run[data-start]");
+      if (run) {
+        revealRunStart(findRunStartEvent(run.getAttribute("data-group"), run.getAttribute("data-key"), Number(run.getAttribute("data-start"))));
+        return;
+      }
       const a = ev.target.closest(".scrub-alert[data-tsms]");
       if (a) jumpTo(Number(a.getAttribute("data-tsms")));
     });
@@ -803,7 +838,7 @@ function feedRowHTML(e, idx) {
   const sev = feedSeverity(e);
   const sevCls = sev === "crit" ? "feed-crit" : sev === "warn" ? "feed-warn" : sev === "audit" ? "feed-audit" : "";
   const subj = subjectSummary(e);
-  return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${idx}" data-tsms="${e.ts.getTime()}">
+  return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${idx}" data-eid="${e._id}" data-tsms="${e.ts.getTime()}">
       <span class="text-slate-400 text-xs whitespace-nowrap" style="width:130px">${e.tsRaw.replace(/\s*[+-]\d{4}\s*$/, "")}</span>
       <span class="text-slate-200 text-sm">${escapeHtml(e.action)}</span>
       <span class="text-slate-500 text-xs">${escapeHtml(e.category)}</span>
@@ -814,12 +849,16 @@ function feedRowHTML(e, idx) {
 }
 function renderFeed(inWin) {
   const host = $("auditFeed");
-  const evs = inWin.filter(e => !isDurationMarker(e));
+  // duration markers (run start/done) are normally hidden — except any explicitly revealed by a
+  // "Running now" panel click (revealedFeedIds), which we surface as raw rows.
+  const evs = inWin.filter(e => !isDurationMarker(e) || revealedFeedIds.has(e._id));
   // alarms/errors pinned on top, then chronological
   const alerts = evs.filter(e => e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
   const rest = evs.filter(e => !e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
   const ordered = alerts.concat(rest);
   const shown = ordered.slice(0, FEED_CAP);
+  // make sure a revealed row survives the cap so the jump can find it
+  for (const e of ordered.slice(FEED_CAP)) if (revealedFeedIds.has(e._id)) shown.push(e);
   host.innerHTML = shown.length
     ? shown.map((e, idx) => feedRowHTML(e, idx)).join("")
     : '<div class="px-5 py-8 text-center text-slate-500 text-sm">No events in this window.</div>';
@@ -1236,7 +1275,8 @@ function buildGuide() {
         A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list. <b>Click any bar</b> to zoom into it.`)}
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span) or the <b>Window</b> presets
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
-      ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
+      ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
+        <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log line (it scrolls, expands and flashes it). <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
       ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart (only when the file has that telemetry), and <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand it and pin it on the timeline.`)}
     </div>`) +
 

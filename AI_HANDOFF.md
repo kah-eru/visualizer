@@ -76,7 +76,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-06-26)
+## Current state (as of 2026-06-29)
 
 - **Version:** 1.0.0. **Branch:** `main`. Working tree clean at handoff.
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
@@ -87,13 +87,23 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **In-app "How to use" guide + doc** (uncommitted) — added a header **How to use** button
+1. **"At Playhead" panel items now jump to the raw feed row** (uncommitted) — every row in the scrubber's
+   right-side panel is clickable. Clicking a **Running now** run (program/zone/mainline) jumps the Activity
+   Audit Feed to that run's **start** event and scrolls/expands/flashes it; alert rows already did this via
+   `jumpTo`. Run start/done rows are normally hidden from the feed (`isDurationMarker`), so events get a
+   stable `_id` at load and the clicked start's id goes into **`revealedFeedIds`**, which `renderFeed`
+   force-includes (and shields from the `FEED_CAP` slice). If the start is outside the current window,
+   `revealRunStart` `panToTime`s to it first. New helpers in `app.js`: `findRunStartEvent`, `revealRunStart`,
+   `flashFeedRow` (shared with `focusFeedEvent`). No data-logic change → the Vitest suite was unaffected
+   (68 green); verified in-browser against `Evnt_flow_test.csv` (program, zone, and off-screen cases;
+   no console errors). Mirrored in `docs/HOW_TO_USE.md` + the in-app guide.
+2. **In-app "How to use" guide + doc** (`e3cef48`) — added a header **How to use** button
    (`#guideBtn`) opening a `#guideModal` walkthrough (numbered getting-started steps, a panes overview,
    and a plain-language tour of every sidebar filter), built by `buildGuide()` in `src/app.js` reusing
    the Reference-modal show/hide/Esc pattern. Static HTML (no data needed), styled with the existing
    Tailwind classes. Mirrored in `docs/HOW_TO_USE.md` for GitHub readers. Verified in-browser (renders,
    color swatches correct, no new console errors).
-2. **Zone runs that never log a `DN` now close at their real end** (uncommitted) — a faulted zone can
+2. **Zone runs that never log a `DN` now close at their real end** (`e3cef48`) — a faulted zone can
    keep being commanded with no `ZN,DN`, which used to render as *ongoing to end-of-log* (a colleague
    saw a ~20-min run shown as **53h 58m**). `buildRunIntervals` now infers the end of an unclosed
    **zone** run from the controller's run-list heartbeat (`closeOpenZoneRun` in `src/runs.js`):

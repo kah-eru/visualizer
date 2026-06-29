@@ -271,6 +271,14 @@ index.html
   **Alerts here** (alerts within tolerance). Each alert row shows a second line:
   **where** (Zone/Program/Mainline) **—** **what** (`whyText`). This was a specific user request:
   "show the error like it is but also what zone had the error and what the error was."
+- **Panel items jump to the feed** (`revealRunStart`/`findRunStartEvent`, ≈L690): every row in the panel
+  is clickable. Clicking a **Running now** run resolves it back to its raw **start** event
+  (`findRunStartEvent` matches group+key+`start` ms in `filtered`) and jumps to it in the audit feed;
+  clicking an **alert** row uses the existing `jumpTo`. Because run start/done rows are normally hidden
+  from the feed (`isDurationMarker`), the start event's id is added to **`revealedFeedIds`** (events get a
+  stable `_id` at load) so `renderFeed` force-includes that one row (and protects it from the `FEED_CAP`
+  slice); if the event is outside the current window, `revealRunStart` `panToTime`s to it first. Then the
+  row is scrolled/expanded/flashed via the shared `flashFeedRow`.
 - Opening/closing the drawer changes the chart's available width, so `setScrubber` sets
   `hydroDirty=true` and re-renders so bars realign to the narrower canvas.
 - `#appRoot.scrub-open { padding-right:300px }` reserves space; `<main>` has `min-w-0` so flex content
