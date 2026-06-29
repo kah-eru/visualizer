@@ -250,6 +250,16 @@ index.html
     the first `MV`/`PM` `DN` (supply cut) after it started; Tier 3 — otherwise (still in the final
     run-list) it stays **ongoing**. Tiers 1–2 mark the run `terminated` + `inferred:true`, and `barHTML`
     shows "ended early (no DONE logged; inferred from run list)". Programs/mainlines are unchanged.
+  - **Cycle-and-soak split** (`buildSoakSegments` in `runs.js`; `soakSplit` + `zoneBars` in `app.js`):
+    a zone waters in cycles separated by soaks, logged per zone as `WT`(water) → `SO`(soak begins) →
+    `WT`(soak ends, next cycle) … → `DN`/`PA`. `buildRunIntervals` still emits **one run envelope**
+    (first `WT` → terminator) so the no-`DN` inference, manual flag, scrubber, and tests are unchanged;
+    it **additively** attaches a `segments` array (`[{s,e,soak}]`) to zone runs that actually soaked.
+    When the **Soak** toggle (`#soakSplitOn`, default on) is on, `zoneBars` renders each segment via
+    `barHTML(…, soak)` — watering = the zone color, soak = `.run-soak` (dimmed + striped) — keeping
+    status hatch on the last segment and the manual badge on the first; off → the single envelope bar.
+    The scrubber panel tags a zone "· soaking" (dimmed dot) when the playhead is in one of its soak
+    segments. Zone-only — programs/mainlines never soak.
 - Run color: scheduled = green, manual = amber, terminated = red. Manual is detected via
   `actCode==="MR"` or trigger User/Operator. Zone/mainline bars use a per-key color with a status hatch overlay.
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).

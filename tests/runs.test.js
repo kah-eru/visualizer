@@ -130,6 +130,52 @@ describe("buildRunIntervals — zone mode (ZN WT → DN)", () => {
     expect(z1).toMatchObject({ kind: "run-terminated", inferred: true, ongoing: false });
     expect(z1.end).toBe(ms("06:08:00"));
   });
+
+  it("splits a cycle-and-soak run into alternating water/soak segments (WT/SO/WT/SO/WT→DN)", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:10:00", "ZN", "SO", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:20:00", "ZN", "WT", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:30:00", "ZN", "SO", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:40:00", "ZN", "WT", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:50:00", "ZN", "DN", "SY", "ZN=4")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1); // still ONE run envelope
+    const z = runs[0];
+    expect(z.start).toBe(ms("06:00:00"));
+    expect(z.end).toBe(ms("06:50:00"));
+    expect(z.segments).toEqual([
+      { s: ms("06:00:00"), e: ms("06:10:00"), soak: false },
+      { s: ms("06:10:00"), e: ms("06:20:00"), soak: true },
+      { s: ms("06:20:00"), e: ms("06:30:00"), soak: false },
+      { s: ms("06:30:00"), e: ms("06:40:00"), soak: true },
+      { s: ms("06:40:00"), e: ms("06:50:00"), soak: false },
+    ]);
+  });
+
+  it("ends the last soak/water segment at a PA that terminates a soak run", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:10:00", "ZN", "SO", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:20:00", "ZN", "WT", "SY", "ZN=4", "PG=4")),
+      parseRow(row("06:25:00", "ZN", "PA", "SY", "ZN=4", "PG=4")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].kind).toBe("run-terminated");
+    expect(runs[0].end).toBe(ms("06:25:00"));
+    expect(runs[0].segments.at(-1)).toEqual({ s: ms("06:20:00"), e: ms("06:25:00"), soak: false });
+  });
+
+  it("attaches no segments to a plain WT→DN run with no soak (unchanged behavior)", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=7", "PG=7")),
+      parseRow(row("06:30:00", "ZN", "DN", "SY", "ZN=7")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs[0].segments).toBeUndefined();
+  });
 });
 
 describe("buildRunIntervals — mainline mode (ML RN → OF)", () => {

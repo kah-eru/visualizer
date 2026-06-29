@@ -52,20 +52,44 @@ export function buildRunIntervals(evs, mode, globalEnd) {
   const out = [];
   for (const key of Object.keys(groups)) {
     const list = groups[key].sort((a, b) => a.ts.getTime() - b.ts.getTime());
-    let open = null, openEv = null, lastSeen = null; // lastSeen = last `ZN,RL` ts that listed this zone
+    // lastSeen = last `ZN,RL` ts that listed this zone; marks = ordered water/soak boundaries within
+    // the open run (cycle-and-soak), used to split a zone bar into watering vs soak segments.
+    let open = null, openEv = null, lastSeen = null, marks = null;
+    // Attach soak segments (zone mode only) to a run that actually soaked, leaving non-soak runs
+    // byte-identical to before. endT closes the final segment.
+    const attachSegs = (run, endT) => {
+      if (mode === "zone" && marks && marks.some(m => m.type === "soak")) run.segments = buildSoakSegments(marks, endT);
+      return run;
+    };
     for (const e of list) {
       const t = e.ts.getTime();
-      if (startSet.has(e.actCode)) { if (open == null) { open = t; openEv = e; lastSeen = null; } }
-      else if (stopSet.has(e.actCode)) { if (open != null) { out.push(makeRun(key, open, t, openEv, e)); open = null; openEv = null; lastSeen = null; } }
-      else if ((e.actCode === "PA" || e.actCode === "DR") && open != null) { out.push(makeRun(key, open, t, openEv, e, true)); open = null; openEv = null; lastSeen = null; }
+      if (startSet.has(e.actCode)) {
+        if (open == null) { open = t; openEv = e; lastSeen = null; marks = [{ t, type: "water" }]; }
+        else marks.push({ t, type: "water" }); // a later WT while open = soak ended, next cycle begins
+      }
+      else if (stopSet.has(e.actCode)) { if (open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e), t)); open = null; openEv = null; lastSeen = null; marks = null; } }
+      else if ((e.actCode === "PA" || e.actCode === "DR") && open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e, true), t)); open = null; openEv = null; lastSeen = null; marks = null; }
+      else if (e.actCode === "SO" && open != null) { marks.push({ t, type: "soak" }); } // soak begins (cycle done)
       else if (e.actCode === "RL" && open != null) { lastSeen = t; } // run-list heartbeat
     }
     if (open != null) {
-      if (mode === "zone") out.push(closeOpenZoneRun(key, open, openEv, lastSeen, maxZnRlTs, mvPmStops, globalEnd));
-      else out.push(makeRun(key, open, globalEnd, openEv, null, false, true));
+      const run = mode === "zone" ? closeOpenZoneRun(key, open, openEv, lastSeen, maxZnRlTs, mvPmStops, globalEnd)
+        : makeRun(key, open, globalEnd, openEv, null, false, true);
+      out.push(attachSegs(run, run.end));
     }
   }
   return out;
+}
+
+// Split a zone run into alternating watering/soak segments from its ordered boundary marks
+// (marks[0] is the opening WT). Each mark runs until the next one, or `end` for the last.
+function buildSoakSegments(marks, end) {
+  const segs = [];
+  for (let i = 0; i < marks.length; i++) {
+    const s = marks[i].t, e = i + 1 < marks.length ? marks[i + 1].t : end;
+    if (e > s) segs.push({ s, e, soak: marks[i].type === "soak" });
+  }
+  return segs;
 }
 
 // Close a zone run that started but never logged a DN. The controller can keep commanding a faulted

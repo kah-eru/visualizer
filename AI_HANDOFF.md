@@ -87,7 +87,21 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **"At Playhead" panel items now jump to the raw feed row** (uncommitted) — every row in the scrubber's
+1. **Cycle-and-soak zone runs are split into watering vs soak segments** (uncommitted) — a zone waters
+   in cycles separated by soaks (`ZN,WT` water → `ZN,SO` soak begins → next `ZN,WT` ends the soak →
+   … → `DN`/`PA`); previously the whole span rendered as one solid bar (e.g. a real ~60-min watering run
+   shown as a 2-hour block). `buildRunIntervals` still emits **one run envelope** (no-`DN` inference,
+   manual, scrubber, tests all unchanged) and **additively** attaches a `segments` array
+   (`buildSoakSegments` in `src/runs.js`) to zone runs that soaked. A new **Soak** toggle
+   (`#soakSplitOn`, default on; `soakSplit` in `app.js`) drives `zoneBars`, which renders each segment via
+   `barHTML(…, soak)` — watering = zone color, soak = `.run-soak` (dimmed/striped, new CSS); status hatch
+   stays on the last segment, manual badge on the first. The scrubber panel tags a zone "· soaking" with a
+   dimmed dot when the playhead is in a soak gap. Zone-only. New `runs.test.js` cases (71 green); a
+   cycle-and-soak zone (Z5/PG4, 07:00–07:50) was added to the synthetic `Evnt_flow_test.csv`. Verified
+   in-browser (segments, soak tooltip, toggle on/off, "soaking" in the panel) and against the real
+   `Evnt_202606.csv` (zone 4, 06/03 → 6 watering cycles + 5 soaks, last segment terminated by the `PA`);
+   no console errors. Mirrored in `docs/HOW_TO_USE.md`, the in-app guide, and `NOTES.md`.
+2. **"At Playhead" panel items now jump to the raw feed row** (`7347cbc`) — every row in the scrubber's
    right-side panel is clickable. Clicking a **Running now** run (program/zone/mainline) jumps the Activity
    Audit Feed to that run's **start** event and scrolls/expands/flashes it; alert rows already did this via
    `jumpTo`. Run start/done rows are normally hidden from the feed (`isDurationMarker`), so events get a

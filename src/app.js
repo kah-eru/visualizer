@@ -41,6 +41,7 @@ let miniDensityDirty = true; // repaint the minimap histogram only when `filtere
 let viewSpan = 0;       // current view width (ms), used by the chart tick/tooltip time formatting
 let flowOn = false;     // show the hydraulic flow/pressure lines on the main timeline (off by default)
 let eventTlOn = false;  // show the separate Interventions & Alerts timeline (off by default)
+let soakSplit = true;   // split cycle-and-soak zone runs into watering vs soak segments (on by default)
 let zoomRange = null;   // {start,end} when zoomed in; null = use the date-filter window
 let zoomStack = [];     // previous ranges for "reset/zoom out"
 let hasHydro = false;   // dataset contains any AC/EX/PR telemetry
@@ -457,7 +458,7 @@ const zoneColor = k => categoryColor("Zone " + k);
 // one run block + corner jump triangles. Start/end times render INSIDE the bar only when there's
 // room for the text; otherwise nothing inline (the full start → stop is always on the hover tooltip).
 // `fill` (zone color) overrides the status color but keeps a status hatch overlay.
-function barHTML(iv, xOf, range, word, fill) {
+function barHTML(iv, xOf, range, word, fill, soak) {
   const span = range.end - range.start;
   const x1 = xOf(iv.start), x2 = xOf(iv.end), width = Math.max(3, x2 - x1);
   const clipL = iv.start < range.start, clipR = iv.end > range.end;
@@ -467,11 +468,14 @@ function barHTML(iv, xOf, range, word, fill) {
   const note = (iv.inferred ? " — ended early (no DONE logged; inferred from run list)"
     : iv.kind === "run-terminated" ? " — stopped early (pause/alarm)"
     : iv.ongoing ? " — ongoing" : "") + (iv.manual ? " · manual" : "");
-  const title = `${word} ${iv.key}${extra}: ${sTxt} → ${eTxt} (${dur})${note}`;
+  const title = soak
+    ? `${word} ${iv.key}${extra} — soaking: ${sTxt} → ${eTxt} (${dur})`
+    : `${word} ${iv.key}${extra}: ${sTxt} → ${eTxt} (${dur})${note}`;
   // With a fill (zone color) we drop the status background class, but still flag manual runs with an
   // amber inset border + "M" badge so they're distinguishable from scheduled runs of the same color.
-  const cls = (fill ? "" : iv.kind) + (iv.manual ? " run-manual-mark" : "");
-  const hatch = (fill && (iv.kind === "run-terminated" || iv.ongoing)) ? " run-hatch" : "";
+  // Soak segments keep the zone hue but read as "not watering" (dimmed + striped via .run-soak).
+  const cls = (fill ? "" : iv.kind) + (iv.manual ? " run-manual-mark" : "") + (soak ? " run-soak" : "");
+  const hatch = (!soak && fill && (iv.kind === "run-terminated" || iv.ongoing)) ? " run-hatch" : "";
   const badge = iv.manual ? `<span class="run-manual-badge" title="Manual run">M</span>` : "";
   let style = `left:${x1}px;width:${width}px;` + (fill ? `background:${fill};` : "");
   // does the bar have room for "start  end" (≈6px/char + padding clear of the corner triangles)?
@@ -489,6 +493,24 @@ function barHTML(iv, xOf, range, word, fill) {
       `<span class="tl-jump tl-jump-end" data-to="${iv.start}" title="Jump to start (${escapeHtml(sTxt)})"></span>`
     : "";
   return `<div class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" style="${style}" title="${escapeHtml(title)}">${inner}${badge}${jumps}</div>`;
+}
+
+// Render a zone run's bars. With soak handling on, a cycle-and-soak run (iv.segments) is drawn as
+// alternating watering (zone color) + soak (dimmed/striped) segments; status visuals stay on the
+// last segment and the manual badge on the first. Otherwise it's the single envelope bar.
+function zoneBars(iv, xOf, range, col) {
+  if (soakSplit && iv.segments && iv.segments.length > 1) {
+    const n = iv.segments.length;
+    return iv.segments.map((sg, i) => {
+      const seg = { ...iv, start: sg.s, end: sg.e,
+        ongoing:  i === n - 1 ? iv.ongoing  : false,   // ongoing/inferred/terminated belong to the run end
+        inferred: i === n - 1 ? iv.inferred : false,
+        kind:     i === n - 1 ? iv.kind : "run-scheduled",
+        manual:   i === 0 ? iv.manual : false };        // "M" badge on the first segment only
+      return barHTML(seg, xOf, range, "Zone", col, sg.soak);
+    }).join("");
+  }
+  return barHTML(iv, xOf, range, "Zone", col);
 }
 
 function renderSwimlane(range, attempt) {
@@ -558,7 +580,7 @@ function renderSwimlane(range, attempt) {
         if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1" style="padding-left:${lblW + 6}px">No zone runs recorded for this program in view.</div>`;
         for (const z of zKeys) {
           const col = zoneColor(z);
-          const zbars = (zoneAllByKey.get(z) || []).filter(zz => String(zz.program) === String(k)).map(iv => barHTML(iv, xOf, range, "Zone", col)).join("");
+          const zbars = (zoneAllByKey.get(z) || []).filter(zz => String(zz.program) === String(k)).map(iv => zoneBars(iv, xOf, range, col)).join("");
           const zlbl = `<span style="${lblBase}color:#cbd5e1;padding-left:12px;" title="Zone ${escapeHtml(z)} in Program ${escapeHtml(k)}">↳ ${swatch(col)}Z${escapeHtml(z)}</span>`;
           html += track(zlbl, zbars, "rgba(148,163,184,0.04)");
         }
@@ -572,7 +594,7 @@ function renderSwimlane(range, attempt) {
     if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected zone runs in view.</div>`;
     for (const k of zKeys) {
       const col = zoneColor(k);
-      const bars = (zoneByKey.get(k) || []).map(iv => barHTML(iv, xOf, range, "Zone", col)).join("");
+      const bars = (zoneByKey.get(k) || []).map(iv => zoneBars(iv, xOf, range, col)).join("");
       html += track(`<span style="color:#cbd5e1;${lblBase}" title="Zone ${escapeHtml(k)}">${swatch(col)}Z${escapeHtml(k)}</span>`, bars);
     }
   }
@@ -773,12 +795,17 @@ function updateScrubPanel() {
   const t = playheadTime, r = currentRange(), span = r.end - r.start;
   const active = visibleRunsAt().filter(iv => iv.start <= t && t < iv.end)
     .sort((a, b) => a.group.localeCompare(b.group) || numCmp(a.key, b.key));
-  const dot = c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${c}"></span>`;
+  const dot = (c, dim) => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${c};${dim ? "opacity:.45;" : ""}"></span>`;
   let runHTML = active.length
-    ? active.map(iv => `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="Show this run's start in the audit feed">
-        <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
+    ? active.map(iv => {
+        // is the playhead inside a soak gap of this run? (then it's mid-cycle, not actively watering)
+        const soaking = soakSplit && iv.segments && !!(iv.segments.find(s => s.s <= t && t < s.e) || {}).soak;
+        const tag = soaking ? " · soaking" : iv.kind === "run-terminated" ? " · stopped early" : iv.manual ? " · manual" : "";
+        return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="Show this run's start in the audit feed">
+        <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
         <span class="text-slate-500 text-xs ml-auto">${escapeHtml(fmtTime(iv.start, span))}→${iv.ongoing ? "…" : escapeHtml(fmtTime(iv.end, span))}</span></div>
-        <div class="text-[10px] text-slate-500 pl-4 pb-1">${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run${iv.kind === "run-terminated" ? " · stopped early" : iv.manual ? " · manual" : ""}</div></div>`).join("")
+        <div class="text-[10px] ${soaking ? "text-sky-400" : "text-slate-500"} pl-4 pb-1">${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run${tag}</div></div>`;
+      }).join("")
     : `<div class="text-slate-500 text-xs">Nothing running.</div>`;
 
   // flow/pressure carry-forward (latest sample at/before t in window)
@@ -999,6 +1026,8 @@ $("scrubClose").addEventListener("click", () => setScrubber(false));
 $("flowOn").addEventListener("change", e => { flowOn = e.target.checked; hydroDirty = true; if (allEvents.length) render(); });
 // Interventions & Alerts timeline toggle — view-only, just re-render
 $("eventTlOn").addEventListener("change", e => { eventTlOn = e.target.checked; if (allEvents.length) render(); else $("eventTlCard").classList.toggle("hidden", !eventTlOn); });
+// Soak split toggle — view-only (segments are already on the runs), just re-render the swimlane
+$("soakSplitOn").addEventListener("change", e => { soakSplit = e.target.checked; if (allEvents.length) render(); });
 let scrubbing = false;
 timeWrap.addEventListener("pointerdown", e => {
   if (!playheadOn) return;
@@ -1272,7 +1301,8 @@ function buildGuide() {
       ${step(1, "Load your log", `Drag a <span class="font-mono text-sky-300">.csv</span> onto the <b>Data Source</b> box (top-left) or click it to browse. The dashboard fills in instantly.`)}
       ${step(2, "Read the timeline", `The <b>Execution Timeline</b> shows one bar per run, grouped into lanes for programs, zones and mainlines.
         Bar colors: ${swatch("#22c55e")} scheduled &nbsp; ${swatch("#f59e0b")} manual (amber border + “M”) &nbsp; ${swatch("#ef4444")} stopped early by a pause/alarm.
-        A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list. <b>Click any bar</b> to zoom into it.`)}
+        A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list.
+        A <b>cycle-and-soak</b> zone shows solid watering segments with dimmed/striped <b>soak</b> gaps between them (toggle <b>Soak</b> off to see it as one continuous bar). <b>Click any bar</b> to zoom into it.`)}
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span) or the <b>Window</b> presets
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.

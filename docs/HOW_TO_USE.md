@@ -20,6 +20,9 @@ The same walkthrough is available inside the app — click **How to use** in the
    - 🟥 **red** — stopped early by a pause or alarm
    - A **hatched bar marked “ended early”** started but never logged a finish (`DN`), so its end is
      **inferred from the controller’s run-list** rather than shown running to the end of the log.
+   - A **cycle-and-soak** zone shows solid watering segments with **dimmed/striped soak** gaps between
+     them, so you see the real watering vs. soaking. Turn the **Soak** toggle off to collapse it back
+     to one continuous bar.
 
    **Click any bar** to zoom into it.
 3. **Move around.** Use the **minimap** (drag the bright window across the full span) or the **Window**
@@ -32,8 +35,9 @@ The same walkthrough is available inside the app — click **How to use** in the
    **Snap** makes the playhead jump to run start/stop edges.
 5. **Dig into the detail.** Toggle **Flow** to overlay the hydraulic flow/pressure chart (shown only
    when the file has that telemetry), and **Events** to add a separate **Interventions & Alerts** lane
-   (click any marker for the reason). Scroll to the **Activity Audit Feed** for every raw event — click
-   a row to expand it and pin it on the timeline.
+   (click any marker for the reason), and **Soak** (on by default) to split cycle-and-soak zones into
+   watering vs. soak segments. Scroll to the **Activity Audit Feed** for every raw event — click a row
+   to expand it and pin it on the timeline.
 
 ---
 

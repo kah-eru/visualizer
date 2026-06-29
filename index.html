@@ -202,6 +202,7 @@
             <span class="text-slate-700">|</span>
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Show the hydraulic flow / pressure chart on this timeline"><input type="checkbox" id="flowOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Flow</label>
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Show a separate timeline of interventions &amp; alerts (pause, disable, status, set, alarms) and why they happened"><input type="checkbox" id="eventTlOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-rose-500">Events</label>
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Split cycle-and-soak zone runs into watering (solid) vs soak (dimmed/striped) segments"><input type="checkbox" id="soakSplitOn" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Soak</label>
             <span class="text-slate-700">|</span>
             <button id="navPrev" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 rounded-md transition-colors" title="Previous">◀</button>
             <span id="navLabel" class="text-xs text-slate-400"></span>
@@ -235,7 +236,7 @@
             </div>
           </div>
         </div>
-        <p class="text-xs text-slate-500 mb-3"><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”) &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm &nbsp;·&nbsp; click a block to zoom · click a feed event to drop a pin · ←/→ to step.</p>
+        <p class="text-xs text-slate-500 mb-3"><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”) &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking &nbsp;·&nbsp; click a block to zoom · click a feed event to drop a pin · ←/→ to step.</p>
 
         <div id="timeWrap" class="relative">
           <div id="swimPin"></div>

@@ -38,6 +38,9 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .tl-bar.clip-r { border-right: 3px solid #e2e8f0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 /* per-run status texture (used over a zone's own color) */
 .run-hatch { background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.28) 4px, rgba(0,0,0,0.28) 8px); }
+/* soak segment of a cycle-and-soak zone run: keep the zone hue but read as "not watering" (dimmed + striped) */
+.tl-bar.run-soak { opacity: 0.5; box-shadow: none;
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.22), rgba(255,255,255,0.22) 3px, transparent 3px, transparent 6px); }
 /* corner jump triangles: ▶ (top-left → go to end), ◀ (top-right → go to start) */
 .tl-jump { position: absolute; top: 1px; width: 0; height: 0; cursor: pointer; z-index: 3; opacity: 0.85; }
 .tl-jump:hover { opacity: 1; }
