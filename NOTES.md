@@ -339,21 +339,20 @@ index.html
 
 ## 8. State of play / open items
 
-**Recently done (this session):**
-- **Performance pass** (see §4 "Bundle + interaction optimizations"): slim Chart.js register, lazy
-  `html2pdf` dynamic import, minimap density gating (`miniDensityDirty`), rAF-throttled scrubber panel,
-  and event delegation. Initial JS ≈918 kB → ≈219 kB (gzip ≈285 → ≈78 kB).
-- **Test suite + CI gating**: extracted the pure data logic into `src/{parse,runs,format,classify}.js`
-  and added Vitest unit tests in `tests/`. CI runs them on every PR (`ci.yml`) and the Pages deploy is
-  **gated** on them passing (`deploy.yml`: `build needs: test`). See §7.
-- Migrated the feedback button to **Web3Forms** (`VITE_WEB3FORMS_KEY`), with the generic-endpoint and
-  download-report fallbacks.
-- Minimap drag made smooth (chart reuse + deferred feed, see §4).
-- Scrubber on by default; drawer always present when on.
-- Panel/timeline overlap fixed (`min-w-0`).
-- New Interventions & Alerts timeline (togglable, off by default); Flow overlay off by default.
-- Collapsed Flow axis height 44→60px (was clipping bottom tick labels).
-- Scrubber alert rows enriched with where + why.
+**Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
+- **Removed the swimlane event-pin** (`de6be55`) — the blue `#swimPin` line was confusable with the
+  amber playhead; clicks now just scroll/expand the feed row (`jumpTo` = `focusFeedEvent`). See §6.
+- **Cycle-and-soak split** (`3c77415`) — zone runs split into watering vs soak segments behind the
+  **Soak** toggle (`#soakSplitOn`, default on); "· soaking" tag in the scrubber panel. See §6 swimlane.
+- **"At Playhead" panel items jump to the feed** (`7347cbc`) — clicking a Running-now run reveals its
+  start row in the audit feed (`revealRunStart`/`findRunStartEvent`; events get a stable `_id`). See §6.
+- **No-`DN` zone end inference + in-app "How to use" guide** (`e3cef48`) — `closeOpenZoneRun` (§6),
+  `buildGuide`, `docs/HOW_TO_USE.md`.
+- **Manual runs on the timeline** (`8f2b4e6`), **3200 MZ object-spec integration** (`2cdb619`).
+- Earlier foundation: performance pass (slim Chart.js, lazy html2pdf, minimap gating, rAF scrubber,
+  event delegation; initial JS ≈918→219 kB), Vitest suite + CI gating, Web3Forms feedback, smooth
+  minimap drag, scrubber-on-by-default, `min-w-0` overlap fix, Interventions & Alerts timeline, Flow off
+  by default, 60px collapsed Flow axis, scrubber alert rows enriched with where + why.
 
 **Verified in-browser (2026-06-22, Chrome via DevTools MCP, using `Evnt_flow_test.csv`):**
 - ✅ **Collapsed Flow axis** — Flow off → chart collapses to a 60px ruler with the bottom time-axis
@@ -375,4 +374,4 @@ index.html
 
 **Test fixture:** `Evnt_flow_test.csv` (repo root) — synthetic one-day log (06/17/26) that exercises the
 flow/variance/alarm/inference paths the real logs (`Evnt_202605.csv`, `Events.csv`) can't, since they
-carry zero AC/EX/PR telemetry.
+carry zero AC/EX/PR telemetry. Includes a cycle-and-soak zone (Z5/PG4, 07:00–07:50) for the soak split.

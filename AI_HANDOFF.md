@@ -76,7 +76,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-06-29)
+## Current state (as of 2026-06-30)
 
 - **Version:** 1.0.0. **Branch:** `main`. Working tree clean at handoff.
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
@@ -87,7 +87,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Removed the swimlane event-pin** (uncommitted) — the blue vertical `#swimPin` line dropped on the
+1. **Removed the swimlane event-pin** (`de6be55`) — the blue vertical `#swimPin` line dropped on the
    timeline when clicking a feed row / alert tick / event marker / panel item was confusable with the
    amber scrubber playhead and added little, so it's gone. Deleted `pinnedTs`, `positionPin`, `pinAt`,
    the `#swimPin` element + CSS; `jumpTo` now just `focusFeedEvent` (scroll/expand/flash the feed row),
