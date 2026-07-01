@@ -67,7 +67,7 @@ The same walkthrough is available inside the app — click **How to use** in the
 - **Flow Variance |AC−EX| %** — appears when the file has flow telemetry; filter to events whose
   commanded vs. expected flow differ by a chosen range.
 - **Show Alerts Only** — the feed shows alarms/errors only.
-- **More filters** — narrow by Zone, Category, Action, Trigger/Actor, or a minimum flow rate.
+- **More filters** — narrow by Category, Action, Trigger/Actor, or a minimum flow rate.
 - **Advanced → low-level system events** — off by default; turn on to include substation, network,
   two-wire, and message chatter.
 - **Reset Filters** — return to the default view.

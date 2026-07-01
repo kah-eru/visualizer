@@ -199,7 +199,6 @@ function onDataLoaded() {
   fillLaneDropdown("mainline", distinctSorted(allEvents.map(e => e.mainline)), m => `Mainline ${m}`, m => categoryColor("Mainline " + m), true);
 
   // other filters
-  fillSelect("zoneFilter", "All Zones", distinctSorted(allEvents.flatMap(e => e.zones)), v => `Zone ${v}`);
   fillSelect("categoryFilter", "All Categories", distinctSorted(allEvents.map(e => e.category)));
   fillSelect("actionFilter", "All Actions", distinctSorted(allEvents.map(e => e.action)));
   fillSelect("triggerFilter", "All Triggers", distinctSorted(allEvents.map(e => e.trigger)));
@@ -240,7 +239,6 @@ function toLocalInput(d) {
 function applyFilters() {
   const fromV = $("dateFrom").value;
   const toV = $("dateTo").value;
-  const zone = $("zoneFilter").value;
   const cat = $("categoryFilter").value;
   const act = $("actionFilter").value;
   const trg = $("triggerFilter").value;
@@ -257,7 +255,6 @@ function applyFilters() {
   // render time. This lets zoom / nav / window presets roam the whole file independent of `filtered`.
   filtered = allEvents.filter(e => {
     if (!showAdvanced && e.isNoise) return false; // hide substation/network/two-wire chatter
-    if (zone && !e.zones.includes(zone)) return false;
     if (cat && e.category !== cat) return false;
     if (act && e.action !== act) return false;
     if (trg && e.trigger !== trg) return false;
@@ -899,7 +896,7 @@ function renderFeed(inWin) {
 }
 
 /* ============================ Filter event wiring ============================ */
-const FILTER_SELECTS = ["zoneFilter","categoryFilter","actionFilter","triggerFilter","substationFilter","alertsOnly","humanAudit","showAdvanced"];
+const FILTER_SELECTS = ["categoryFilter","actionFilter","triggerFilter","substationFilter","alertsOnly","humanAudit","showAdvanced"];
 FILTER_SELECTS.forEach(id =>
   $(id).addEventListener("change", applyFilters));
 // editing a date picker becomes the view window — drop any zoom so the typed range takes effect
@@ -914,7 +911,7 @@ flowSlider.addEventListener("change", applyFilters);
 
 $("resetBtn").addEventListener("click", () => {
   if (!allEvents.length) return;
-  ["zoneFilter","categoryFilter","actionFilter","triggerFilter","substationFilter"]
+  ["categoryFilter","actionFilter","triggerFilter","substationFilter"]
     .forEach(id => $(id).value = "");
   // lane dropdowns back to defaults: programs & mainlines all, zones none
   laneSel.program = new Set(laneAll.program); laneSel.zone = new Set(); laneSel.mainline = new Set(laneAll.mainline);
@@ -1317,7 +1314,7 @@ function buildGuide() {
       `<b>SubStation</b> — isolate one substation.`,
       `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
       `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,
-      `<b>More filters</b> — narrow by Zone, Category, Action, Trigger/Actor, or a minimum flow rate.`,
+      `<b>More filters</b> — narrow by Category, Action, Trigger/Actor, or a minimum flow rate. (To focus the timeline on specific zones, use the <b>Zones</b> lane picker under “Show on timeline”.)`,
       `<b>Advanced → low-level system events</b> — off by default; turn on to include substation, network, two-wire and message chatter.`,
       `<b>Reset Filters</b> — back to the default view.`,
     ])) +
@@ -1397,7 +1394,7 @@ export function getDiagnostics() {
     lanes: { program: laneSel.program.size, zone: laneSel.zone.size, mainline: laneSel.mainline.size },
     flowOn, eventTlOn,
     filters: {
-      zone: safeVal("zoneFilter"), category: safeVal("categoryFilter"), action: safeVal("actionFilter"),
+      category: safeVal("categoryFilter"), action: safeVal("actionFilter"),
       trigger: safeVal("triggerFilter"), substation: safeVal("substationFilter"),
       alertsOnly: safeChk("alertsOnly"), humanAudit: safeChk("humanAudit"), showAdvanced: safeChk("showAdvanced"),
       varMin: safeVal("varMin"), varMax: safeVal("varMax"),

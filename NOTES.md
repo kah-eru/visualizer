@@ -340,7 +340,10 @@ index.html
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
-- **"No flow data" clarity + hover tooltips** (uncommitted) — `#flowNote` next to the **Flow** toggle
+- **Removed the redundant Zone filter** (uncommitted) — the standalone Zone dropdown in "More filters"
+  overlapped the **Zones** lane picker, so it's gone (Category/Action/Trigger/Min-Flow stay). All filters
+  are applied in one place — `applyFilters()` in `src/app.js` — and were re-verified working in-browser.
+- **"No flow data" clarity + hover tooltips** (`c5d50f3`) — `#flowNote` next to the **Flow** toggle
   flags a loaded log with no `AC`/`EX` flow at load time (toggled beside `hasHydro`/`#varSection` in the
   loader); reworded `#hydroEmpty` overlay + hydro legend explain what flow needs and to check the
   FlowStation / flow report. Added native `title=` tooltips across the timeline legend, stat strip,

@@ -87,7 +87,16 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **"No flow data" clarity + hover tooltips** (uncommitted) — a support log with no `AC`/`EX` flow
+1. **Removed the redundant Zone filter from "More filters"** (uncommitted) — the standalone Zone
+   dropdown overlapped confusingly with the **Zones** lane picker, so it was dropped; Category / Action /
+   Trigger / Min-Flow stay (with no feed text-search, they're the only per-type feed narrowing). Deleted
+   the `#zoneFilter` markup (`index.html`) and every reference in `src/app.js` (`fillSelect`, the
+   `applyFilters` read + predicate, `FILTER_SELECTS`, the reset list, and the `getDiagnostics` payload);
+   corrected the More-filters wording in the in-app guide + `docs/HOW_TO_USE.md`. Verified the remaining
+   filters all run correctly in-browser: **Advanced/low-level chatter** (1,833→2,193 on the real support
+   log), Category/Action/Trigger, Min-Flow, variance, human-audit, alerts-only, and Reset — no console
+   errors. 71 tests green, build clean.
+2. **"No flow data" clarity + hover tooltips** (`c5d50f3`) — a support log with no `AC`/`EX` flow
    pairs "showed no flow," which was correct (the Flow overlay is fed only by `FLOW_KEYS = {AC,EX}` in
    `src/constants.js`, consumed at `src/parse.js:71`) but invisible because the existing "No flow
    telemetry" overlay/legend only appears *after* toggling Flow on (off by default). Now: a `#flowNote`
