@@ -213,6 +213,8 @@ function onDataLoaded() {
   // detect hydraulic telemetry → reveal the variance slider only when meaningful
   hasHydro = allEvents.some(e => e.pairs.AC || e.pairs.EX);
   $("varSection").classList.toggle("hidden", !hasHydro);
+  // Flag a loaded log that carries no flow telemetry so the user sees it without toggling Flow on.
+  $("flowNote").classList.toggle("hidden", !(allEvents.length && !hasHydro));
 
   // flow max (for the optional Min-Flow slider under More filters)
   const fmax = allEvents.reduce((m, e) => e.flow != null && e.flow > m ? e.flow : m, 0);
@@ -430,7 +432,7 @@ function buildHydroChart(range) {
   $("legendHydro").innerHTML =
     !flowOn ? '<span class="text-slate-600">Flow overlay off — enable “Flow” to chart actual/expected flow &amp; pressure.</span>'
     : hasData ? datasets.map(d => `<span class="flex items-center gap-1"><span class="inline-block w-3 h-2 rounded-sm" style="background:${d.borderColor}"></span><span class="text-slate-300">${escapeHtml(d.label)}</span></span>`).join("")
-    : '<span class="text-slate-500">No flow telemetry (AC/EX/PR) in this file.</span>';
+    : '<span class="text-slate-500" title="Flow is charted from Actual (AC) / Expected (EX) readings and pressure from PR — the controller logs these during zone runs with flow monitoring. None are present here; check the FlowStation / flow report for flow with no zones running.">No flow readings (AC/EX/PR) in this log — check the FlowStation / flow report.</span>';
 }
 
 // Cheap view-only update: move the x-axis to the new window (no destroy/recreate, no animation).
@@ -788,7 +790,11 @@ function updateScrubPanel() {
         // is the playhead inside a soak gap of this run? (then it's mid-cycle, not actively watering)
         const soaking = soakSplit && iv.segments && !!(iv.segments.find(s => s.s <= t && t < s.e) || {}).soak;
         const tag = soaking ? " · soaking" : iv.kind === "run-terminated" ? " · stopped early" : iv.manual ? " · manual" : "";
-        return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="Show this run's start in the audit feed">
+        const tagWhy = soaking ? "Between watering cycles (soaking — valve off). " :
+          iv.kind === "run-terminated" ? "Ended early on a pause/disable/alarm. " :
+          iv.manual ? "Started by a person, not the schedule. " : "";
+        const rowTitle = `${tagWhy}Click to jump to this run's start in the audit feed.`;
+        return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="${escapeHtml(rowTitle)}">
         <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
         <span class="text-slate-500 text-xs ml-auto">${escapeHtml(fmtTime(iv.start, span))}→${iv.ongoing ? "…" : escapeHtml(fmtTime(iv.end, span))}</span></div>
         <div class="text-[10px] ${soaking ? "text-sky-400" : "text-slate-500"} pl-4 pb-1">${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run${tag}</div></div>`;
@@ -818,7 +824,7 @@ function updateScrubPanel() {
       near.map(e => {
         const where = e.zones.length ? `Zone ${e.zones.join(", ")}` : (e.program != null ? `Program ${e.program}` : (e.mainline != null ? `Mainline ${e.mainline}` : ""));
         const detail = [where, whyText(e)].filter(Boolean).join(" — "); // what had the error + what the error was
-        return `<div class="scrub-alert py-1 cursor-pointer hover:bg-slate-800 rounded px-1" data-tsms="${e.ts.getTime()}">
+        return `<div class="scrub-alert py-1 cursor-pointer hover:bg-slate-800 rounded px-1" data-tsms="${e.ts.getTime()}" title="Alarm/error near the playhead. Click to jump to it in the audit feed.">
         <div class="flex items-baseline gap-1">
           <span class="text-rose-300 text-xs">${escapeHtml(e.action)}</span><span class="text-slate-500 text-[10px]">${escapeHtml(e.category)}</span>
           <span class="text-slate-500 text-[10px] ml-auto">${escapeHtml(fmtTime(e.ts.getTime(), span))}</span>
@@ -1293,7 +1299,7 @@ function buildGuide() {
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
         <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log line (it scrolls, expands and flashes it). <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart (only when the file has that telemetry), and <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
     </div>`) +
 
     sec("The panes, top to bottom", li([

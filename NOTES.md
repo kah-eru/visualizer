@@ -340,6 +340,12 @@ index.html
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
+- **"No flow data" clarity + hover tooltips** (uncommitted) — `#flowNote` next to the **Flow** toggle
+  flags a loaded log with no `AC`/`EX` flow at load time (toggled beside `hasHydro`/`#varSection` in the
+  loader); reworded `#hydroEmpty` overlay + hydro legend explain what flow needs and to check the
+  FlowStation / flow report. Added native `title=` tooltips across the timeline legend, stat strip,
+  Window/minimap, Flow-variance controls, sidebar filters, and the At-Playhead rows. UI/markup only —
+  no logic change. See §6 (Flow detection: `FLOW_KEYS`, `src/parse.js`).
 - **Removed the swimlane event-pin** (`de6be55`) — the blue `#swimPin` line was confusable with the
   amber playhead; clicks now just scroll/expand the feed row (`jumpTo` = `focusFeedEvent`). See §6.
 - **Cycle-and-soak split** (`3c77415`) — zone runs split into watering vs soak segments behind the

@@ -76,7 +76,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-06-30)
+## Current state (as of 2026-07-01)
 
 - **Version:** 1.0.0. **Branch:** `main`. Working tree clean at handoff.
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
@@ -87,7 +87,24 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Removed the swimlane event-pin** (`de6be55`) — the blue vertical `#swimPin` line dropped on the
+1. **"No flow data" clarity + hover tooltips** (uncommitted) — a support log with no `AC`/`EX` flow
+   pairs "showed no flow," which was correct (the Flow overlay is fed only by `FLOW_KEYS = {AC,EX}` in
+   `src/constants.js`, consumed at `src/parse.js:71`) but invisible because the existing "No flow
+   telemetry" overlay/legend only appears *after* toggling Flow on (off by default). Now: a `#flowNote`
+   ("· no flow data") shows next to the **Flow** toggle at load whenever a loaded log has no AC/EX —
+   toggled in the same loader spot that sets `hasHydro`/`#varSection` (`src/app.js` ~L216); its `title`
+   and the reworded `#hydroEmpty` overlay + legend explain that flow needs AC/EX readings (logged during
+   zone runs with flow monitoring) and to check the FlowStation / flow report for flow with no zones
+   running. Also added native `title=` hover tooltips across previously-unexplained UI: the Flow/variance
+   controls, the timeline legend swatches (scheduled/manual/stopped/soaking + the inferred-end hatch),
+   the stat strip, Window presets + minimap, and the sidebar filters (Human-audit, SubStation,
+   Alerts-only, Advanced); the At-Playhead run rows' `title` now explains the soaking/stopped/manual tag
+   and the alert rows got a title too. UI/markup only — no data-logic change, 71 tests still green,
+   build clean; verified in-browser with the real support log (flag + messages) and the synthetic
+   `Evnt_flow_test.csv` (flag hidden, flow charts normally), no console errors. Mirrored in
+   `docs/HOW_TO_USE.md` step 5 and the in-app guide. (The real support log `Events_test.csv` was added
+   to `.gitignore` — never commit it.)
+2. **Removed the swimlane event-pin** (`de6be55`) — the blue vertical `#swimPin` line dropped on the
    timeline when clicking a feed row / alert tick / event marker / panel item was confusable with the
    amber scrubber playhead and added little, so it's gone. Deleted `pinnedTs`, `positionPin`, `pinAt`,
    the `#swimPin` element + CSS; `jumpTo` now just `focusFeedEvent` (scroll/expand/flash the feed row),

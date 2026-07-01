@@ -16,6 +16,8 @@ index.html.bak
 testmanual.csv
 # Real monthly event logs (Evnt_yyyyMM.csv) — keep the synthetic Evnt_flow_test.csv.
 Evnt_2*.csv
+# Real customer support logs dropped in for local diagnosis (never commit).
+Events_test.csv
 
 # Personal (per-machine) Claude Code settings; shared settings live in .claude/settings.json
 .claude/settings.local.json

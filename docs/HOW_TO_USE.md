@@ -33,11 +33,14 @@ The same walkthrough is available inside the app — click **How to use** in the
    program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log
    line (it scrolls, expands and flashes it; the view pans to it if it’s outside the current window).
    **Snap** makes the playhead jump to run start/stop edges.
-5. **Dig into the detail.** Toggle **Flow** to overlay the hydraulic flow/pressure chart (shown only
-   when the file has that telemetry), and **Events** to add a separate **Interventions & Alerts** lane
-   (click any marker for the reason), and **Soak** (on by default) to split cycle-and-soak zones into
-   watering vs. soak segments. Scroll to the **Activity Audit Feed** for every raw event — click a row
-   to expand its raw detail.
+5. **Dig into the detail.** Toggle **Flow** to overlay the hydraulic flow/pressure chart. Flow is read
+   from **Actual (AC) / Expected (EX)** values the controller logs during zone runs with flow monitoring
+   — if a log has none, a **“no flow data”** note appears next to the toggle and the chart says so (for
+   flow with *no zones running*, that data lives in the FlowStation / flow report, not the event log).
+   Toggle **Events** to add a separate **Interventions & Alerts** lane (click any marker for the reason),
+   and **Soak** (on by default) to split cycle-and-soak zones into watering vs. soak segments. Scroll to
+   the **Activity Audit Feed** for every raw event — click a row to expand its raw detail. **Hover almost
+   any control** — toggles, the stat strip, legend swatches, and sidebar filters — for a tooltip.
 
 ---
 

@@ -83,7 +83,7 @@
       </div>
 
       <!-- Human Audit toggle -->
-      <label class="flex items-start gap-2 cursor-pointer select-none">
+      <label class="flex items-start gap-2 cursor-pointer select-none" title="Keep only person-initiated actions (User / Administrator triggers) and hide system/automatic events — useful to see what someone changed vs. what the controller did on its own.">
         <input type="checkbox" id="humanAudit" class="mt-0.5 w-4 h-4 rounded bg-slate-800 border-slate-600 accent-sky-500">
         <span class="text-sm text-slate-300">Human audit only
           <span class="block text-xs text-slate-500">Show only User / Administrator actions (was it a person or the system?).</span>
@@ -92,25 +92,25 @@
 
       <!-- SubStation isolation -->
       <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">SubStation</label>
-        <select id="substationFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Isolate a single substation (by serial SN or number SB) so the timeline and feed show only its events. Leave on “All SubStations” to see everything.">SubStation</label>
+        <select id="substationFilter" title="Isolate a single substation; “All SubStations” shows everything." class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
           <option value="">All SubStations</option>
         </select>
       </div>
 
       <!-- Flow variance threshold (auto-shown only when the file has AC/EX flow) -->
       <div id="varSection" class="hidden">
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Flow Variance |AC−EX| %</label>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Variance = |Actual − Expected| ÷ Expected, as a percent. Filters the feed to events whose commanded (EX) and measured (AC) flow differ by this much — high variance flags over/under-flow. Only shown when the log has AC/EX flow.">Flow Variance |AC−EX| %</label>
         <div class="space-y-1">
           <div class="flex items-center gap-2"><span class="text-xs text-slate-500 w-8">min</span>
-            <input type="range" id="varMin" min="0" max="100" value="0" step="1" class="flex-1"><span id="varMinVal" class="text-xs text-sky-400 w-8 text-right">0%</span></div>
+            <input type="range" id="varMin" min="0" max="100" value="0" step="1" class="flex-1" title="Lowest flow-variance % to show (0 = include perfectly-matched flow)."><span id="varMinVal" class="text-xs text-sky-400 w-8 text-right">0%</span></div>
           <div class="flex items-center gap-2"><span class="text-xs text-slate-500 w-8">max</span>
-            <input type="range" id="varMax" min="0" max="100" value="100" step="1" class="flex-1"><span id="varMaxVal" class="text-xs text-sky-400 w-8 text-right">100%</span></div>
+            <input type="range" id="varMax" min="0" max="100" value="100" step="1" class="flex-1" title="Highest flow-variance % to show (100 = include the largest deviations)."><span id="varMaxVal" class="text-xs text-sky-400 w-8 text-right">100%</span></div>
         </div>
       </div>
 
       <!-- Alerts only -->
-      <label class="flex items-center gap-2 cursor-pointer select-none">
+      <label class="flex items-center gap-2 cursor-pointer select-none" title="Show only alarms and errors (category AL or action ER) in the Activity Audit Feed — hides normal runs and status events.">
         <input type="checkbox" id="alertsOnly" class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-sky-500">
         <span class="text-sm text-slate-300">Show Alerts Only</span>
       </label>
@@ -146,7 +146,7 @@
       <!-- Advanced: low-level chatter, hidden by default -->
       <div class="pt-3 border-t border-slate-800">
         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Advanced</label>
-        <label class="flex items-start gap-2 cursor-pointer select-none">
+        <label class="flex items-start gap-2 cursor-pointer select-none" title="Include low-level chatter — substation, network, two-wire, and message-code events. Off keeps the view focused on programs, zones, run times, and flow.">
           <input type="checkbox" id="showAdvanced" class="mt-0.5 w-4 h-4 rounded bg-slate-800 border-slate-600 accent-sky-500">
           <span class="text-sm text-slate-300">Show low-level system events
             <span class="block text-xs text-slate-500">Substation, network, two-wire &amp; message chatter. Off by default — focuses on programs, zones, run times &amp; flow.</span>
@@ -186,10 +186,10 @@
     <div id="dashboard">
       <!-- Slim stat strip -->
       <div class="flex flex-wrap items-center gap-x-8 gap-y-1 mb-4 bg-slate-900 border border-slate-800 rounded-xl px-5 py-3">
-        <div><span id="statTotal" class="text-2xl font-bold text-white">0</span> <span class="text-slate-400 text-xs">events in window</span></div>
-        <div><span id="statAlerts" class="text-2xl font-bold text-rose-400">0</span> <span class="text-slate-400 text-xs">active alerts</span></div>
-        <div><span id="statRuns" class="text-2xl font-bold text-emerald-400">0</span> <span class="text-slate-400 text-xs">runs</span></div>
-        <div class="text-xs text-slate-400 ml-auto">Window: <span id="statWindow" class="text-slate-200 font-medium"></span></div>
+        <div class="cursor-help" title="Number of event rows in the current time window, after filters. Change the Window presets or drag the minimap to widen/narrow it."><span id="statTotal" class="text-2xl font-bold text-white">0</span> <span class="text-slate-400 text-xs">events in window</span></div>
+        <div class="cursor-help" title="Alarms/errors (category AL or action ER) in the current window. These are pinned to the top of the Activity Audit Feed."><span id="statAlerts" class="text-2xl font-bold text-rose-400">0</span> <span class="text-slate-400 text-xs">active alerts</span></div>
+        <div class="cursor-help" title="Program / zone / mainline runs (start→stop pairs) drawn as bars in the timeline for the current window."><span id="statRuns" class="text-2xl font-bold text-emerald-400">0</span> <span class="text-slate-400 text-xs">runs</span></div>
+        <div class="text-xs text-slate-400 ml-auto cursor-help" title="The time range currently shown across the timeline, chart, and feed.">Window: <span id="statWindow" class="text-slate-200 font-medium"></span></div>
       </div>
 
       <!-- TOP PANE: Swimlane timeline + Hydraulic overlay -->
@@ -200,7 +200,7 @@
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Draggable playhead with a live info panel"><input type="checkbox" id="scrubberOn" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-amber-500">Scrubber</label>
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Snap the playhead to block start/end edges"><input type="checkbox" id="scrubberSnap" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-amber-500">Snap</label>
             <span class="text-slate-700">|</span>
-            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Show the hydraulic flow / pressure chart on this timeline"><input type="checkbox" id="flowOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Flow</label>
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Chart the hydraulic flow / pressure lines on this timeline. Flow is read from Actual (AC) / Expected (EX) values, which the controller logs during zone runs with flow monitoring."><input type="checkbox" id="flowOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Flow</label><span id="flowNote" class="hidden text-[11px] text-amber-400 cursor-help" title="This log has no Actual/Expected (AC/EX) flow readings — the controller only logs those during zone runs with flow monitoring. If you're chasing flow with no zones running, check the FlowStation / flow report instead of this event log.">· no flow data</span>
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Show a separate timeline of interventions &amp; alerts (pause, disable, status, set, alarms) and why they happened"><input type="checkbox" id="eventTlOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-rose-500">Events</label>
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Split cycle-and-soak zone runs into watering (solid) vs soak (dimmed/striped) segments"><input type="checkbox" id="soakSplitOn" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Soak</label>
             <span class="text-slate-700">|</span>
@@ -212,15 +212,15 @@
         </div>
         <!-- view-window presets -->
         <div class="flex flex-wrap items-center gap-2 mb-2 text-xs" data-html2canvas-ignore="true">
-          <span class="text-slate-400">Window:</span>
+          <span class="text-slate-400 cursor-help" title="Set how much time the timeline shows at once. Presets centre on the current view; ◀ ▶ or the arrow keys step one window at a time.">Window:</span>
           <div id="windowPresets" class="inline-flex rounded-md overflow-hidden border border-slate-700">
-            <button data-win="all" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">All</button>
-            <button data-win="month" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">Month</button>
-            <button data-win="week" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">Week</button>
-            <button data-win="day" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">Day</button>
-            <button data-win="hour" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">Hour</button>
-            <button data-win="minute" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">Min</button>
-            <button data-win="second" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700">Sec</button>
+            <button data-win="all" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Fit the entire log in one view.">All</button>
+            <button data-win="month" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-month window.">Month</button>
+            <button data-win="week" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-week window.">Week</button>
+            <button data-win="day" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-day window.">Day</button>
+            <button data-win="hour" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-hour window.">Hour</button>
+            <button data-win="minute" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-minute window.">Min</button>
+            <button data-win="second" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-second window.">Sec</button>
           </div>
           <span id="bucketLabel" class="text-slate-500"></span>
         </div>
@@ -229,21 +229,21 @@
           <div class="flex justify-between text-[10px] text-slate-500 mb-0.5">
             <span id="miniStart"></span><span class="text-slate-400">Full timeline — drag the window to navigate</span><span id="miniEnd"></span>
           </div>
-          <div id="miniMap" class="relative select-none" style="height:44px; background:#0b1220; border:1px solid #1e293b; border-radius:6px; overflow:hidden; cursor:pointer;">
+          <div id="miniMap" class="relative select-none" title="Overview of the whole log. Drag the bright window to pan, drag its edges to resize, or click anywhere to jump the view there." style="height:44px; background:#0b1220; border:1px solid #1e293b; border-radius:6px; overflow:hidden; cursor:pointer;">
             <canvas id="miniCanvas" style="position:absolute; inset:0;"></canvas>
             <div id="miniWindow" style="position:absolute; top:0; bottom:0; background:rgba(56,189,248,0.18); border:1px solid #38bdf8;">
               <div class="mini-handle" data-edge="L"></div><div class="mini-handle" data-edge="R"></div>
             </div>
           </div>
         </div>
-        <p class="text-xs text-slate-500 mb-3"><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”) &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm &nbsp; <span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking &nbsp;·&nbsp; click a block to zoom · click a feed event to jump to it · ←/→ to step.</p>
+        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; click a block to zoom · click a feed event to jump to it · ←/→ to step.</p>
 
         <div id="timeWrap" class="relative">
           <div id="playhead"></div>
           <div id="swimlane"></div>
           <div id="hydroBox" class="relative" style="height:180px;">
             <canvas id="hydroChart"></canvas>
-            <div id="hydroEmpty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-slate-500 pointer-events-none">No flow telemetry (AC/EX/PR) in this file — timeline axis shown for reference.</div>
+            <div id="hydroEmpty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-slate-500 pointer-events-none text-center px-4">No Actual/Expected (AC/EX) flow or pressure (PR) readings in this log — nothing to chart. The controller logs those during zone runs with flow monitoring; for flow with no zones running, check the FlowStation / flow report. (Timeline axis shown for reference.)</div>
           </div>
         </div>
         <div id="legendHydro" class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs"></div>
