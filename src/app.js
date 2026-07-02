@@ -769,6 +769,7 @@ function positionPlayhead() {
   playheadTime = Math.max(r.start, Math.min(r.end, playheadTime)); // clamp into view
   el.style.left = xScale.getPixelForValue(playheadTime) + "px";
   el.style.display = "block";
+  $("playheadTime").textContent = fmtTimeDate(playheadTime, 0); // exact date + time incl. seconds
   panel.classList.remove("hidden");
   // throttle the expensive panel rebuild during an active drag; update immediately otherwise
   if (scrubbing) scheduleScrubPanel(); else updateScrubPanel();
