@@ -237,8 +237,6 @@ function toLocalInput(d) {
 
 /* ============================ Filtering ============================ */
 function applyFilters() {
-  const fromV = $("dateFrom").value;
-  const toV = $("dateTo").value;
   const cat = $("categoryFilter").value;
   const act = $("actionFilter").value;
   const trg = $("triggerFilter").value;

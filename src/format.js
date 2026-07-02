@@ -27,19 +27,29 @@ export function categoryColor(name) {
 }
 
 /* ---- time / duration formatting ---- */
+// Constructing an Intl formatter per call is the expensive part; fmtTime/fmtTimeDate fire per-bar and
+// per-axis-tick during render. Lazily cache one instance per option shape (locale [] = default). Output
+// is identical to the old toLocale* calls with the same options.
+const _dtfCache = {};
+function dtf(key, opts) {
+  return _dtfCache[key] || (_dtfCache[key] = new Intl.DateTimeFormat([], opts));
+}
+const _HM = { hour: "2-digit", minute: "2-digit" };
+const _HMS = { hour: "2-digit", minute: "2-digit", second: "2-digit" };
+const _MD = { month: "short", day: "numeric" };
+
 export function fmtTime(ms, spanMs) {
   const d = new Date(ms);
-  if (spanMs <= 3 * 60000) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  if (spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  if (spanMs <= 3 * 60000) return dtf("hms", _HMS).format(d);
+  if (spanMs <= 2 * 86400000) return dtf("hm", _HM).format(d);
+  return dtf("mdhm", { ..._MD, ..._HM }).format(d);
 }
 // Like fmtTime but always includes the calendar date — used for the window-range label so a
 // same-day window reads e.g. "Jun 17, 12:00 AM" instead of a bare "12:00 AM".
 export function fmtTimeDate(ms, spanMs) {
   const d = new Date(ms);
-  const date = { month: "short", day: "numeric" };
-  if (spanMs <= 3 * 60000) return d.toLocaleString([], { ...date, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  return d.toLocaleString([], { ...date, hour: "2-digit", minute: "2-digit" });
+  if (spanMs <= 3 * 60000) return dtf("mdhms", { ..._MD, ..._HMS }).format(d);
+  return dtf("mdhm", { ..._MD, ..._HM }).format(d);
 }
 export function fmtDuration(ms) {
   const m = Math.round(ms / 60000);
