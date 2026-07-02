@@ -88,6 +88,14 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 /* audit feed severity accents */
 .feed-row { cursor:pointer; border-left:3px solid transparent; }
 .feed-row:hover { background:#1e293b; }
+/* per-row "jump the timeline here" button */
+.feed-jump { cursor:pointer; opacity:0.75; background:none; border:0; padding:0; font:inherit; }
+.feed-jump:hover { opacity:1; }
+/* sortable audit-feed column headers */
+.feed-sort { cursor:pointer; color:#64748b; text-transform:uppercase; background:none; border:0; padding:0; font:inherit; letter-spacing:inherit; }
+.feed-sort:hover { color:#93c5fd; }
+.feed-sort-active { color:#38bdf8; }
+.sort-arrow { font-size:9px; }
 .feed-crit { border-left-color:#ef4444; }
 .feed-warn { border-left-color:#f59e0b; }
 .feed-audit { border-left-color:#38bdf8; }

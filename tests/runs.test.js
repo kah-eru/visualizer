@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseRow } from "../src/parse.js";
-import { makeRun, buildRunIntervals } from "../src/runs.js";
+import { makeRun, buildRunIntervals, zoneRunInProgram } from "../src/runs.js";
 
 const row = (time, cat, act, trg, ...rest) => [`06/17/26 ${time} -0600`, cat, act, trg, ...rest];
 const ms = (time) => parseRow(row(time, "SY", "BT", "SY")).ts.getTime();
@@ -188,5 +188,29 @@ describe("buildRunIntervals — mainline mode (ML RN → OF)", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ key: "1" });
     expect(runs[0].end).toBe(ms("06:40:00"));
+  });
+});
+
+describe("zoneRunInProgram — program↔zone attribution with orphan fallback", () => {
+  const zoneRun = { program: "1", start: ms("08:00:00"), end: ms("08:30:00") };
+  const p3Runs = [{ start: ms("08:00:00"), end: ms("10:30:00") }]; // Program 3's run window
+
+  it("returns true when the zone's PG tag matches the program lane (normal case)", () => {
+    expect(zoneRunInProgram({ ...zoneRun, program: "3" }, "3", new Set(["3"]), p3Runs)).toBe(true);
+  });
+
+  it("returns true for an orphaned tag whose run overlaps the program's window", () => {
+    // PG=1 corresponds to no real program run → attribute to P3 by time overlap.
+    expect(zoneRunInProgram(zoneRun, "3", new Set(["3"]), p3Runs)).toBe(true);
+  });
+
+  it("returns false for an orphaned tag whose run does not overlap the program's window", () => {
+    const late = { program: "1", start: ms("11:00:00"), end: ms("11:30:00") };
+    expect(zoneRunInProgram(late, "3", new Set(["3"]), p3Runs)).toBe(false);
+  });
+
+  it("returns false when the tag is a real program elsewhere (no hijacking a legit tag)", () => {
+    // PG=1 IS a real program run somewhere, so it is respected — not folded into P3 despite overlap.
+    expect(zoneRunInProgram(zoneRun, "3", new Set(["1", "3"]), p3Runs)).toBe(false);
   });
 });

@@ -261,6 +261,20 @@
           <h3 class="text-sm font-semibold text-slate-200">Activity Audit Feed <span class="text-xs font-normal text-slate-500">— alarms pinned on top; click a row to expand its detail</span></h3>
           <span id="feedInfo" class="text-xs text-slate-500"></span>
         </div>
+        <div class="px-4 py-2 border-b border-slate-800">
+          <input id="feedSearch" type="search" autocomplete="off" placeholder="Search all events — date, action, zone, program, keyword…"
+            class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-md px-3 py-1.5 placeholder-slate-500 focus:outline-none focus:border-sky-500"
+            title="Search across every loaded event (date, action, category, subject, trigger, raw line). Space-separated terms all must match. Results span the whole log — use a row's ↗ timeline button to jump to one.">
+        </div>
+        <!-- sortable column header (stays put while rows scroll below) -->
+        <div id="feedHead" class="hidden px-4 py-2 flex flex-wrap items-baseline gap-x-3 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800 bg-slate-950/50 select-none">
+          <button class="feed-sort text-left" data-col="date" style="width:130px" title="Sort by date">Date<span class="sort-arrow"></span></button>
+          <button class="feed-sort text-left" data-col="action" style="width:88px" title="Sort by action">Action<span class="sort-arrow"></span></button>
+          <button class="feed-sort text-left" data-col="category" style="width:72px" title="Sort by category">Category<span class="sort-arrow"></span></button>
+          <button class="feed-sort text-left" data-col="subject" style="flex:1 1 140px;min-width:120px" title="Sort by subject">Subject<span class="sort-arrow"></span></button>
+          <button class="feed-sort text-left" data-col="trigger" style="width:96px" title="Sort by trigger">Trigger<span class="sort-arrow"></span></button>
+          <span style="width:80px"></span>
+        </div>
         <div class="overflow-y-auto" style="max-height:540px;">
           <div id="auditFeed"></div>
         </div>

@@ -39,7 +39,11 @@ The same walkthrough is available inside the app — click **How to use** in the
    flow with *no zones running*, that data lives in the FlowStation / flow report, not the event log).
    Toggle **Events** to add a separate **Interventions & Alerts** lane (click any marker for the reason),
    and **Soak** (on by default) to split cycle-and-soak zones into watering vs. soak segments. Scroll to
-   the **Activity Audit Feed** for every raw event — click a row to expand its raw detail. **Hover almost
+   the **Activity Audit Feed** for every raw event — click a row to expand its raw detail, or its **↗ timeline**
+   button (right side) to move the timeline to that moment. Use the **search box** to find events across the
+   *whole* log (date, action, zone, program, keyword — space-separated terms all must match) and **click any
+   column header** to sort by it (click again to flip, a third click restores the pinned-alarms default).
+   Clicking a **run bar** on the timeline jumps the feed to that run's raw start line. **Hover almost
    any control** — toggles, the stat strip, legend swatches, and sidebar filters — for a tooltip.
 
 ---

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseRow } from "../src/parse.js";
 import {
   isDurationMarker, feedSeverity, eventGroupOf, whyText, subjectSummary,
+  feedSearchText, feedMatches, feedSortValue,
 } from "../src/classify.js";
 
 const row = (cat, act, trg, ...rest) => parseRow([`06/17/26 06:00:00 -0600`, cat, act, trg, ...rest]);
@@ -85,5 +86,42 @@ describe("subjectSummary", () => {
     const s = subjectSummary(row("SY", "BT", "SY"));
     expect(s.title).toBe("System");
     expect(s.html).toContain("System");
+  });
+});
+
+describe("feedSearchText / feedMatches (audit-feed search across cells)", () => {
+  const e = row("ZN", "RD", "SY", "ZN=1", "PG=3");
+  it("concatenates the row's cells + raw line, lowercased", () => {
+    const t = feedSearchText(e);
+    expect(t).toBe(t.toLowerCase());
+    expect(t).toContain("zone 1");   // subject
+    expect(t).toContain("system");   // trigger (SY → System)
+    expect(t).toContain("zn=1");     // raw line
+  });
+  it("matches only when every whitespace token is found — across different cells", () => {
+    expect(feedMatches(e, "zone 1")).toBe(true);
+    expect(feedMatches(e, "zone 3")).toBe(true); // 'zone' from subject, '3' from the PG=3 raw field
+  });
+  it("fails when any token is absent", () => {
+    expect(feedMatches(e, "zone 9")).toBe(false);
+  });
+  it("treats an empty/blank query as match-all", () => {
+    expect(feedMatches(e, "")).toBe(true);
+    expect(feedMatches(e, "   ")).toBe(true);
+  });
+});
+
+describe("feedSortValue", () => {
+  it("returns the numeric epoch for the date column", () => {
+    const e = row("ZN", "RD", "SY", "ZN=1");
+    expect(feedSortValue(e, "date")).toBe(e.ts.getTime());
+    expect(typeof feedSortValue(e, "date")).toBe("number");
+  });
+  it("returns the display string for text columns", () => {
+    const e = row("ML", "RN", "PG", "ML=4");
+    expect(feedSortValue(e, "action")).toBe(e.action);
+    expect(feedSortValue(e, "category")).toBe(e.category);
+    expect(feedSortValue(e, "trigger")).toBe(e.trigger);
+    expect(feedSortValue(e, "subject")).toBe("Mainline 4");
   });
 });

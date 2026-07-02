@@ -61,3 +61,32 @@ export function subjectSummary(e) {
   // fall back to the category itself as the subject (e.g. "System")
   return { html: `<span class="text-slate-400">${escapeHtml(e.category)}</span>`, title: e.category };
 }
+
+/* ---- Audit-feed search + sort (pure; drive the feed's search box and sortable columns) ---- */
+
+// The searchable haystack for one event: every visible "cell" plus the raw line, lowercased, so a
+// single query can match across multiple columns at once (date, action, category, subject, trigger).
+export function feedSearchText(e) {
+  return [e.tsRaw, e.action, e.category, subjectSummary(e).title, e.trigger, e.rawLine]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+
+// True when every whitespace-separated token of `query` appears somewhere in the event's search text
+// (token AND). An empty/blank query matches everything.
+export function feedMatches(e, query) {
+  const toks = (query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!toks.length) return true;
+  const hay = feedSearchText(e);
+  return toks.every(t => hay.includes(t));
+}
+
+// Comparable value for sorting a feed row by a column: numeric epoch for "date", else the display string.
+export function feedSortValue(e, col) {
+  switch (col) {
+    case "action":   return e.action || "";
+    case "category": return e.category || "";
+    case "subject":  return subjectSummary(e).title || "";
+    case "trigger":  return e.trigger || "";
+    default:         return e.ts.getTime(); // "date"
+  }
+}

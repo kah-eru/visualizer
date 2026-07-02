@@ -23,13 +23,14 @@ import {
 import { showErrorBanner, pushError } from "./errors.js";
 // Pure data logic lives in dependency-free modules (unit-tested in tests/); app.js wires them to the DOM.
 import { parseRow, inferEffectivePrograms } from "./parse.js";
-import { RUN_START, RUN_STOP, makeRun, buildRunIntervals } from "./runs.js";
+import { RUN_START, RUN_STOP, makeRun, buildRunIntervals, zoneRunInProgram } from "./runs.js";
 import {
   escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
   windowLabel, snapWindow, eventVariancePct, categoryColor,
 } from "./format.js";
 import {
   isDurationMarker, feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
+  feedMatches, feedSortValue,
 } from "./classify.js";
 
 /* ============================ State ============================ */
@@ -208,6 +209,9 @@ function onDataLoaded() {
     v => /^[A-Za-z]/.test(String(v)) ? v : `SubStation ${v}`);
 
   updateLaneButtons();
+  // fresh log → clear any leftover feed search/sort from a previous file
+  feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
+  $("feedHead").classList.remove("hidden"); // sortable column header appears once a log is loaded
 
   // detect hydraulic telemetry → reveal the variance slider only when meaningful
   hasHydro = allEvents.some(e => e.pairs.AC || e.pairs.EX);
@@ -337,13 +341,6 @@ function panToTime(t) {
   render();
 }
 
-// zoom the timeline to an explicit [start,end] (a custom, non-aligned window)
-function zoomTo(start, end) {
-  zoomStack.push(zoomRange);
-  windowUnit = "custom";
-  zoomRange = { start, end: end > start ? end : start + 1000 };
-  render();
-}
 function zoomOut() {
   if (zoomStack.length) zoomRange = zoomStack.pop();
   else zoomRange = null;            // back to the date-picker window
@@ -378,6 +375,9 @@ let expandedPrograms = new Set(); // program keys whose zone drop-down is open (
 // Run start/done rows are normally hidden from the feed (drawn as bars). When the user clicks a
 // "Running now" item in the scrubber panel, we force-show that specific event's raw row here.
 let revealedFeedIds = new Set();
+// Audit-feed search + column sort. Empty query = windowed feed; non-empty = search across the whole log.
+// feedSortCol null = default order (alarms pinned, then chronological); set = sort by that column.
+let feedQuery = "", feedSortCol = null, feedSortDir = "asc";
 
 /* ---- Component B: Hydraulic overlay (Chart.js line, provides the shared X scale) ---- */
 // Rebuild the Chart.js instance from the full `filtered` telemetry. Only needed when `filtered` changes
@@ -488,7 +488,10 @@ function barHTML(iv, xOf, range, word, fill, soak) {
     ? `<span class="tl-jump tl-jump-start" data-to="${iv.end}" title="Jump to end (${escapeHtml(eTxt)})"></span>` +
       `<span class="tl-jump tl-jump-end" data-to="${iv.start}" title="Jump to start (${escapeHtml(sTxt)})"></span>`
     : "";
-  return `<div class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" style="${style}" title="${escapeHtml(title)}">${inner}${badge}${jumps}</div>`;
+  // group/key/runstart let a bar click resolve back to the run's raw start event in the feed. For a
+  // soak/watering *segment* iv.start is the segment start, so iv.runStart carries the true run start.
+  const runStart = iv.runStart != null ? iv.runStart : iv.start;
+  return `<div class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" data-group="${word}" data-key="${escapeHtml(String(iv.key))}" data-runstart="${runStart}" style="${style}" title="${escapeHtml(title)}">${inner}${badge}${jumps}</div>`;
 }
 
 // Render a zone run's bars. With soak handling on, a cycle-and-soak run (iv.segments) is drawn as
@@ -498,7 +501,7 @@ function zoneBars(iv, xOf, range, col) {
   if (soakSplit && iv.segments && iv.segments.length > 1) {
     const n = iv.segments.length;
     return iv.segments.map((sg, i) => {
-      const seg = { ...iv, start: sg.s, end: sg.e,
+      const seg = { ...iv, start: sg.s, end: sg.e, runStart: iv.start, // keep the run's real start for feed lookup
         ongoing:  i === n - 1 ? iv.ongoing  : false,   // ongoing/inferred/terminated belong to the run end
         inferred: i === n - 1 ? iv.inferred : false,
         kind:     i === n - 1 ? iv.kind : "run-scheduled",
@@ -564,6 +567,9 @@ function renderSwimlane(range, attempt) {
   // Programs (expandable to their zones)
   if (showPrograms) {
     html += section("Programs");
+    // Program tags that actually correspond to a real program run somewhere in the log; a zone whose
+    // PG tag is NOT here is "orphaned" and gets attributed to a program by time overlap (see zoneRunInProgram).
+    const realProgTags = new Set(runIntervals("program").map(r => r.key));
     const pKeys = sortedKeys(progRuns).filter(k => laneSel.program.has(k));
     if (!pKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected program runs in view.</div>`;
     for (const k of pKeys) {
@@ -572,11 +578,12 @@ function renderSwimlane(range, attempt) {
       const lbl = `<span class="lane-label" data-prog="${escapeHtml(k)}" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Click to ${expanded ? "hide" : "show"} zones in Program ${escapeHtml(k)}">${expanded ? "▾" : "▸"} P${escapeHtml(k)}</span>`;
       html += track(lbl, bars);
       if (expanded) {
-        const zKeys = sortedKeys(zoneRunsAll.filter(z => String(z.program) === String(k)));
+        const inProg = z => zoneRunInProgram(z, k, realProgTags, progByKey.get(k) || []);
+        const zKeys = sortedKeys(zoneRunsAll.filter(inProg));
         if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1" style="padding-left:${lblW + 6}px">No zone runs recorded for this program in view.</div>`;
         for (const z of zKeys) {
           const col = zoneColor(z);
-          const zbars = (zoneAllByKey.get(z) || []).filter(zz => String(zz.program) === String(k)).map(iv => zoneBars(iv, xOf, range, col)).join("");
+          const zbars = (zoneAllByKey.get(z) || []).filter(inProg).map(iv => zoneBars(iv, xOf, range, col)).join("");
           const zlbl = `<span style="${lblBase}color:#cbd5e1;padding-left:12px;" title="Zone ${escapeHtml(z)} in Program ${escapeHtml(k)}">↳ ${swatch(col)}Z${escapeHtml(z)}</span>`;
           html += track(zlbl, zbars, "rgba(148,163,184,0.04)");
         }
@@ -624,8 +631,10 @@ function renderSwimlane(range, attempt) {
       }
       const mark = ev.target.closest(".alert-mark[data-tsms]");
       if (mark) { jumpTo(Number(mark.getAttribute("data-tsms"))); return; }
-      const bar = ev.target.closest(".tl-bar[data-start]");
-      if (bar) { ev.stopPropagation(); zoomTo(Number(bar.getAttribute("data-start")), Number(bar.getAttribute("data-end")) + 1); }
+      const bar = ev.target.closest(".tl-bar[data-runstart]");
+      if (bar) { ev.stopPropagation();
+        // scroll the audit feed to this run's raw start line and highlight it (no zoom)
+        revealRunStart(findRunStartEvent(bar.getAttribute("data-group"), bar.getAttribute("data-key"), Number(bar.getAttribute("data-runstart")))); }
     });
   }
   positionPlayhead();
@@ -854,34 +863,55 @@ function feedRowHTML(e, idx) {
   const sev = feedSeverity(e);
   const sevCls = sev === "crit" ? "feed-crit" : sev === "warn" ? "feed-warn" : sev === "audit" ? "feed-audit" : "";
   const subj = subjectSummary(e);
-  return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${idx}" data-eid="${e._id}" data-tsms="${e.ts.getTime()}">
+  const ts = e.ts.getTime();
+  return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${idx}" data-eid="${e._id}" data-tsms="${ts}">
       <span class="text-slate-400 text-xs whitespace-nowrap" style="width:130px">${e.tsRaw.replace(/\s*[+-]\d{4}\s*$/, "")}</span>
-      <span class="text-slate-200 text-sm">${escapeHtml(e.action)}</span>
-      <span class="text-slate-500 text-xs">${escapeHtml(e.category)}</span>
-      <span class="text-sky-200 text-xs">${subj.html}</span>
-      <span class="text-slate-500 text-xs ml-auto" title="${escapeHtml(`${e.trgCode || "?"} = ${e.trigger}`)}">by ${escapeHtml(e.trigger)}</span>
+      <span class="text-slate-200 text-sm" style="width:88px">${escapeHtml(e.action)}</span>
+      <span class="text-slate-500 text-xs" style="width:72px">${escapeHtml(e.category)}</span>
+      <span class="text-sky-200 text-xs" style="flex:1 1 140px;min-width:120px">${subj.html}</span>
+      <span class="text-slate-500 text-xs truncate" style="width:96px" title="${escapeHtml(`${e.trgCode || "?"} = ${e.trigger}`)}">by ${escapeHtml(e.trigger)}</span>
+      <button class="feed-jump text-sky-400 hover:text-sky-200 text-xs whitespace-nowrap text-right" style="width:80px" data-tsms="${ts}" title="Jump the timeline to this event (${escapeHtml(fmtTimeDate(ts, 0))})">↗ timeline</button>
     </div>
     <div class="hidden px-4 py-3 text-xs leading-relaxed flex flex-wrap" style="background:#0b1220" data-fdetail="${idx}">${detailHTML(e)}</div>`;
 }
+// Sort comparator honoring the active column + direction (numeric for date, natural string else,
+// event time as a stable tiebreak).
+function feedCompare(a, b) {
+  const dir = feedSortDir === "desc" ? -1 : 1;
+  const va = feedSortValue(a, feedSortCol), vb = feedSortValue(b, feedSortCol);
+  let c = feedSortCol === "date" ? va - vb : String(va).localeCompare(String(vb), undefined, { numeric: true });
+  if (!c) c = a.ts.getTime() - b.ts.getTime();
+  return c * dir;
+}
 function renderFeed(inWin) {
   const host = $("auditFeed");
-  // duration markers (run start/done) are normally hidden — except any explicitly revealed by a
-  // "Running now" panel click (revealedFeedIds), which we surface as raw rows.
-  const evs = inWin.filter(e => !isDurationMarker(e) || revealedFeedIds.has(e._id));
-  // alarms/errors pinned on top, then chronological
-  const alerts = evs.filter(e => e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
-  const rest = evs.filter(e => !e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
-  const ordered = alerts.concat(rest);
+  const searching = !!feedQuery;
+  // Search spans the whole loaded log; otherwise the feed is the current window. Duration markers
+  // (run start/done) stay hidden except any explicitly revealed by a "Running now"/bar click.
+  const base = (searching ? filtered : inWin).filter(e => !isDurationMarker(e) || revealedFeedIds.has(e._id));
+  const matched = searching ? base.filter(e => feedMatches(e, feedQuery)) : base;
+  let ordered;
+  if (feedSortCol) {
+    ordered = matched.slice().sort(feedCompare);       // explicit column sort → no alert pinning
+  } else {
+    // default: alarms/errors pinned on top, then chronological
+    const alerts = matched.filter(e => e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
+    const rest = matched.filter(e => !e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
+    ordered = alerts.concat(rest);
+  }
+  const alertCount = matched.reduce((n, e) => n + (e.isAlert ? 1 : 0), 0);
   const shown = ordered.slice(0, FEED_CAP);
   // make sure a revealed row survives the cap so the jump can find it
   for (const e of ordered.slice(FEED_CAP)) if (revealedFeedIds.has(e._id)) shown.push(e);
   host.innerHTML = shown.length
     ? shown.map((e, idx) => feedRowHTML(e, idx)).join("")
-    : '<div class="px-5 py-8 text-center text-slate-500 text-sm">No events in this window.</div>';
+    : `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events in this window."}</div>`;
   // One delegated listener (attached once) instead of re-binding every row on each render.
   if (!host._delegated) {
     host._delegated = true;
     host.addEventListener("click", ev => {
+      const jump = ev.target.closest(".feed-jump[data-tsms]");
+      if (jump) { ev.stopPropagation(); panToTime(Number(jump.getAttribute("data-tsms"))); return; }
       const row = ev.target.closest(".feed-row");
       if (!row) return;
       const idx = row.getAttribute("data-idx");
@@ -889,9 +919,31 @@ function renderFeed(inWin) {
       if (d) d.classList.toggle("hidden");
     });
   }
-  $("feedInfo").textContent = ordered.length > FEED_CAP
-    ? `Showing first ${FEED_CAP.toLocaleString()} of ${ordered.length.toLocaleString()} (${alerts.length} alerts)`
-    : `${ordered.length.toLocaleString()} events${alerts.length ? ` · ${alerts.length} alerts` : ""}`;
+  updateFeedHead();
+  const total = ordered.length;
+  $("feedInfo").textContent = searching
+    ? `${total > FEED_CAP ? `First ${FEED_CAP.toLocaleString()} of ` : ""}${total.toLocaleString()} match${total === 1 ? "" : "es"} across all events${alertCount ? ` · ${alertCount} alerts` : ""}`
+    : total > FEED_CAP
+      ? `Showing first ${FEED_CAP.toLocaleString()} of ${total.toLocaleString()} (${alertCount} alerts)`
+      : `${total.toLocaleString()} events${alertCount ? ` · ${alertCount} alerts` : ""}`;
+}
+// Reflect the active sort column/direction on the clickable header (arrow + highlight).
+function updateFeedHead() {
+  const head = $("feedHead");
+  if (!head) return;
+  head.querySelectorAll(".feed-sort").forEach(btn => {
+    const active = btn.getAttribute("data-col") === feedSortCol;
+    btn.classList.toggle("feed-sort-active", active);
+    const arrow = btn.querySelector(".sort-arrow");
+    if (arrow) arrow.textContent = active ? (feedSortDir === "desc" ? " ▼" : " ▲") : "";
+  });
+}
+// Recompute just the feed (search/sort changes don't need the chart/swimlane rebuilt).
+function refreshFeed() {
+  if (!allEvents.length) return;
+  const range = currentRange();
+  const inWin = filtered.filter(e => { const t = e.ts.getTime(); return t >= range.start && t < range.end; });
+  renderFeed(inWin);
 }
 
 /* ============================ Filter event wiring ============================ */
@@ -907,6 +959,20 @@ flowSlider.addEventListener("input", () => {
   $("flowValue").textContent = parseFloat(flowSlider.value).toFixed(1);
 });
 flowSlider.addEventListener("change", applyFilters);
+
+// Audit-feed search box — filters across the whole log; feed-only refresh (no chart/swimlane rebuild).
+$("feedSearch").addEventListener("input", e => { feedQuery = e.target.value.trim(); refreshFeed(); });
+// Clickable column headers cycle asc → desc → off (back to the pinned-alarms default); a new column
+// starts ascending.
+$("feedHead").addEventListener("click", e => {
+  const btn = e.target.closest(".feed-sort[data-col]");
+  if (!btn) return;
+  const col = btn.getAttribute("data-col");
+  if (feedSortCol !== col) { feedSortCol = col; feedSortDir = "asc"; }
+  else if (feedSortDir === "asc") feedSortDir = "desc";
+  else { feedSortCol = null; feedSortDir = "asc"; }
+  refreshFeed();
+});
 
 $("resetBtn").addEventListener("click", () => {
   if (!allEvents.length) return;
@@ -926,6 +992,8 @@ $("resetBtn").addEventListener("click", () => {
   $("varMin").value = 0; $("varMinVal").textContent = "0%";
   $("varMax").value = 100; $("varMaxVal").textContent = "100%";
   zoomStack = []; expandedPrograms.clear();
+  // clear the audit-feed search box + column sort back to the pinned-alarms default
+  feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
   // back to the default: the calendar day containing the last event
   windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT, { min: dataMinT, max: dataMaxT });
   applyFilters();
@@ -1290,12 +1358,12 @@ function buildGuide() {
       ${step(2, "Read the timeline", `The <b>Execution Timeline</b> shows one bar per run, grouped into lanes for programs, zones and mainlines.
         Bar colors: ${swatch("#22c55e")} scheduled &nbsp; ${swatch("#f59e0b")} manual (amber border + “M”) &nbsp; ${swatch("#ef4444")} stopped early by a pause/alarm.
         A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list.
-        A <b>cycle-and-soak</b> zone shows solid watering segments with dimmed/striped <b>soak</b> gaps between them (toggle <b>Soak</b> off to see it as one continuous bar). <b>Click any bar</b> to zoom into it.`)}
+        A <b>cycle-and-soak</b> zone shows solid watering segments with dimmed/striped <b>soak</b> gaps between them (toggle <b>Soak</b> off to see it as one continuous bar). <b>Click any bar</b> to jump the Activity Audit Feed to that run’s raw start line (it scrolls, expands and flashes it).`)}
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span) or the <b>Window</b> presets
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
         <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log line (it scrolls, expands and flashes it). <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to move the timeline to that moment. The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
     </div>`) +
 
     sec("The panes, top to bottom", li([

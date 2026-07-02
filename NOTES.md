@@ -218,7 +218,7 @@ index.html
     ├── render pipeline:
     │     render() (≈L804) → renderStat → renderFeed → renderHydro → renderEventTimeline
     │                       → updateNavControls → renderMiniMap
-    ├── window/zoom/nav: snapWindow, setWindowUnit, panToTime, zoomTo/zoomOut, navShift (≈L822–898)
+    ├── window/zoom/nav: snapWindow, setWindowUnit, panToTime, zoomOut, navShift (≈L822–898)
     ├── hydro chart: buildHydroChart / applyHydroView / renderHydro (≈L903–967)
     ├── swimlane: RUN_START/RUN_STOP, makeRun, buildRunIntervals, barHTML, renderSwimlane (≈L969–1171)
     ├── event timeline: EVENT_GROUPS, whyText, renderEventTimeline (≈L1173–1243)
@@ -264,7 +264,9 @@ index.html
   `actCode==="MR"` or trigger User/Operator. Zone/mainline bars use a per-key color with a status hatch overlay.
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).
   Default: programs & mainlines **all**, zones **none**. Programs are expandable to their zones (click the label).
-- Each bar: click body → `zoomTo` that run; corner triangles → `panToTime` the other end at the same zoom.
+- Each bar: click body → `revealRunStart(findRunStartEvent(group,key,runStart))` — scroll/expand/flash the
+  run's raw start row in the feed (no zoom); corner triangles → `panToTime` the run's other edge. Bars carry
+  `data-group`/`data-key`/`data-runstart` (the last is the run's true start, so a soak *segment* still resolves).
 - Red alert ticks (`.alert-mark`) sit above the lanes; click → `jumpTo` (scroll/expand/flash the feed row).
 
 ### Interventions & Alerts timeline (`renderEventTimeline`, ≈L1195) — toggle `eventTlOn`, OFF by default
@@ -297,9 +299,16 @@ index.html
 ### Audit feed (`renderFeed`, ≈L1392)
 - Shows instantaneous events; **excludes** duration markers (`isDurationMarker`, ≈L1369) since those
   are drawn as swimlane bars.
-- Alarms pinned on top, then chronological. Severity left-border accent via `feedSeverity`.
+- Alarms pinned on top, then chronological — unless a column sort is active (`feedSortCol`), which sorts
+  the whole set by that column (no pinning). Severity left-border accent via `feedSeverity`.
 - Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
-- Click a row → expand detail (chips + raw CSV line).
+- Click a row → expand detail (chips + raw CSV line). Each row also has a right-side `.feed-jump` button →
+  `panToTime` (moves the timeline to that event; `stopPropagation` so it doesn't toggle the row).
+- **Search + sort** (pure helpers `feedSearchText`/`feedMatches`/`feedSortValue` in `classify.js`): the
+  `#feedSearch` box searches across the **whole** log (`filtered`, not just the window) — token-AND over the
+  event's cells + raw line; non-empty query switches the base set from `inWin` to `filtered`. `#feedHead` is a
+  clickable column header (cycles asc → desc → off). Both use `refreshFeed()` (feed-only, no chart rebuild).
+  Search/sort reset on new-file load and on Reset Filters.
 
 ### Minimap (≈L1588+)
 - Full-data-span overview with a draggable/resizable view-window box. Canvas density bins + red alert

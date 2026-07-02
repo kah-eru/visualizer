@@ -81,6 +81,16 @@ export function buildRunIntervals(evs, mode, globalEnd) {
   return out;
 }
 
+// A zone run belongs to a program lane when its PG tag matches that program, OR — when its tag
+// corresponds to no real program run anywhere (orphaned, e.g. a ZN,WT line stamped with a program
+// that never started) — when the run overlaps one of that program's run windows. This recovers the
+// program a zone actually watered under from time overlap.
+export function zoneRunInProgram(zoneRun, progKey, realProgTags, progRunsForKey) {
+  if (String(zoneRun.program) === String(progKey)) return true;   // normal: PG matches
+  if (realProgTags.has(String(zoneRun.program))) return false;    // tag is a real program elsewhere — respect it
+  return progRunsForKey.some(pr => zoneRun.start < pr.end && zoneRun.end > pr.start); // orphan → overlap
+}
+
 // Split a zone run into alternating watering/soak segments from its ordered boundary marks
 // (marks[0] is the opening WT). Each mark runs until the next one, or `end` for the last.
 function buildSoakSegments(marks, end) {
