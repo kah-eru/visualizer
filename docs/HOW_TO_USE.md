@@ -24,27 +24,31 @@ The same walkthrough is available inside the app — click **How to use** in the
      them, so you see the real watering vs. soaking. Turn the **Soak** toggle off to collapse it back
      to one continuous bar.
 
-   **Click any bar** to zoom into it.
+   **Click any bar** to jump the Activity Audit Feed to that run’s raw start line (it scrolls, expands and flashes it).
 3. **Move around.** Use the **minimap** (drag the bright window across the full span) or the **Window**
-   presets (`All · Month · Week · Day · Hour · Min · Sec`). **◀ / ▶** step one window at a time, **Back**
-   undoes a zoom, and the **← / →** arrow keys also step.
+   presets (`All · Month · Week · Day · Hour · Min · Sec`). A preset opens a window of that length **centered
+   on the scrubber** — e.g. **Hour** shows ½ hour on each side of the playhead — so zooming in/out keeps the
+   moment you’re looking at put. **◀ / ▶** step one window at a time, **Back** undoes a zoom, and the
+   **← / →** arrow keys also step.
 4. **Inspect a moment.** Keep **Scrubber** on and drag the playhead — the **“At Playhead”** panel on the
-   right lists exactly what was running at that instant. **Click any item in that panel** — a running
-   program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log
-   line (it scrolls, expands and flashes it; the view pans to it if it’s outside the current window).
-   **Snap** makes the playhead jump to run start/stop edges.
+   right lists exactly what was running at that instant, and an amber marker on the **minimap** mirrors the
+   playhead’s position live. **Click any item in that panel** — a running program/zone/mainline or an alert
+   — to move the scrubber right onto that event, flash its run bar on the timeline, and open its raw log
+   line in the Activity Audit Feed (the view pans to it if it’s outside the current window). **Snap** makes
+   the playhead jump to run start/stop edges.
 5. **Dig into the detail.** Toggle **Flow** to overlay the hydraulic flow/pressure chart. Flow is read
    from **Actual (AC) / Expected (EX)** values the controller logs during zone runs with flow monitoring
    — if a log has none, a **“no flow data”** note appears next to the toggle and the chart says so (for
    flow with *no zones running*, that data lives in the FlowStation / flow report, not the event log).
    Toggle **Events** to add a separate **Interventions & Alerts** lane (click any marker for the reason),
    and **Soak** (on by default) to split cycle-and-soak zones into watering vs. soak segments. Scroll to
-   the **Activity Audit Feed** for every raw event — click a row to expand its raw detail, or its **↗ timeline**
-   button (right side) to move the timeline to that moment. Use the **search box** to find events across the
-   *whole* log (date, action, zone, program, keyword — space-separated terms all must match) and **click any
-   column header** to sort by it (click again to flip, a third click restores the pinned-alarms default).
-   Clicking a **run bar** on the timeline jumps the feed to that run's raw start line. **Hover almost
-   any control** — toggles, the stat strip, legend swatches, and sidebar filters — for a tooltip.
+   the **Activity Audit Feed**, which lists **every event in the whole log** (not just the current window —
+   it stays put as you pan the timeline). Click a row to expand its raw detail, or its **↗ timeline**
+   button (right side) to drop the scrubber on that moment and flash its run bar. Use the **search box** to
+   find events across the whole log (date, action, zone, program, keyword — space-separated terms all must
+   match) and **click any column header** to sort by it (click again to flip, a third click restores the
+   pinned-alarms default). Clicking a **run bar** on the timeline jumps the feed to that run's raw start
+   line. **Hover almost any control** — toggles, the stat strip, legend swatches, and sidebar filters — for a tooltip.
 
 ---
 
@@ -55,7 +59,7 @@ The same walkthrough is available inside the app — click **How to use** in the
 | **Stat strip** | Events in the current window, active alerts, and run count. |
 | **Execution Timeline** | The swimlane of runs + minimap + (optional) flow/pressure chart. |
 | **Interventions & Alerts** | Pauses, disables, status changes, and alarms — with the “why”. (Toggle **Events**.) |
-| **Activity Audit Feed** | The full searchable event list; alarms are pinned on top. |
+| **Activity Audit Feed** | Every event in the whole log (independent of the window) — searchable, sortable by any column; alarms pinned on top. |
 
 ---
 

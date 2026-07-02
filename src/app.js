@@ -26,11 +26,11 @@ import { parseRow, inferEffectivePrograms } from "./parse.js";
 import { RUN_START, RUN_STOP, makeRun, buildRunIntervals, zoneRunInProgram } from "./runs.js";
 import {
   escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
-  windowLabel, snapWindow, eventVariancePct, categoryColor,
+  windowLabel, snapWindow, centeredWindow, eventVariancePct, categoryColor,
 } from "./format.js";
 import {
   isDurationMarker, feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
-  feedMatches, feedSortValue,
+  eventRunTarget, selectFeedRows,
 } from "./classify.js";
 
 /* ============================ State ============================ */
@@ -308,7 +308,7 @@ function render() {
     syncDateInputs(range);
     const inWin = filtered.filter(e => { const t = e.ts.getTime(); return t >= range.start && t < range.end; });
     renderStat(range, inWin);
-    renderFeed(inWin);
+    renderFeed();           // feed lists the whole log, independent of the window
     renderHydro(range);     // builds the chart, then calls renderSwimlane() using its X scale
     renderEventTimeline(range);
     updateNavControls(range);
@@ -329,6 +329,20 @@ function syncDateInputs(range) {
 function setWindowUnit(unit, anchor) {
   windowUnit = unit; zoomStack = [];
   zoomRange = unit === "all" ? { start: dataMinT, end: dataMaxT + 1 } : snapWindow(unit, anchor, { min: dataMinT, max: dataMaxT });
+  render();
+}
+
+// set the view to a window of `unit`'s duration centered on the scrubber (½ the unit on each side), so
+// zooming in/out from the preset selector keeps the playhead put. Falls back to the view center when the
+// scrubber is off. Used by the preset buttons; `setWindowUnit` (calendar-aligned) still drives nav-stepping.
+function setWindowUnitCentered(unit) {
+  windowUnit = unit; zoomStack = [];
+  if (unit === "all") { zoomRange = { start: dataMinT, end: dataMaxT + 1 }; }
+  else {
+    const r = currentRange();
+    const center = (playheadOn && playheadTime != null) ? playheadTime : (r.start + r.end) / 2;
+    zoomRange = centeredWindow(unit, center);
+  }
   render();
 }
 
@@ -378,6 +392,9 @@ let revealedFeedIds = new Set();
 // Audit-feed search + column sort. Empty query = windowed feed; non-empty = search across the whole log.
 // feedSortCol null = default order (alarms pinned, then chronological); set = sort by that column.
 let feedQuery = "", feedSortCol = null, feedSortDir = "asc";
+let lastFeedSig = null; // content signature of the last feed render, to preserve scroll on view-only moves
+// A run bar to flash on the next swimlane render (set by a "locate on timeline" jump). {group,key,ts}.
+let pendingBarHighlight = null;
 
 /* ---- Component B: Hydraulic overlay (Chart.js line, provides the shared X scale) ---- */
 // Rebuild the Chart.js instance from the full `filtered` telemetry. Only needed when `filtered` changes
@@ -637,7 +654,25 @@ function renderSwimlane(range, attempt) {
         revealRunStart(findRunStartEvent(bar.getAttribute("data-group"), bar.getAttribute("data-key"), Number(bar.getAttribute("data-runstart")))); }
     });
   }
+  // Flash a run bar requested by a "locate on timeline" jump. Done here (post-innerHTML) so it survives
+  // this function's requestAnimationFrame deferral. Lights up every segment of the matched run.
+  if (pendingBarHighlight) {
+    const { group, key, ts } = pendingBarHighlight;
+    pendingBarHighlight = null;
+    const bars = [...lane.querySelectorAll(".tl-bar[data-runstart]")]
+      .filter(b => b.dataset.group === group && b.dataset.key === String(key));
+    const hit = bars.find(b => Number(b.dataset.start) <= ts && ts < Number(b.dataset.end) + 1);
+    if (hit) for (const b of bars) if (b.dataset.runstart === hit.dataset.runstart) flashBar(b);
+  }
   positionPlayhead();
+}
+
+// Restart-safe amber flash on a swimlane run bar (used by "locate on timeline" jumps).
+function flashBar(b) {
+  b.classList.remove("tl-hit");
+  void b.offsetWidth; // force reflow so re-adding the class restarts the animation
+  b.classList.add("tl-hit");
+  b.addEventListener("animationend", () => b.classList.remove("tl-hit"), { once: true });
 }
 
 /* ---- Interventions & Alerts timeline (discrete event markers; separate togglable section) ---- */
@@ -731,6 +766,20 @@ function findRunStartEvent(group, key, startMs) {
 // scroll/expand/flash the matching feed row (shared by all marker clicks)
 function jumpTo(ts) { focusFeedEvent(ts); }
 
+// "Locate on the timeline": drop the scrubber playhead exactly on `ts`, center the view if it's
+// off-screen, flash the matching run bar (`target = {group,key}` or null), and — when a `feedEvent`
+// is given — reveal + flash its raw feed row too. Shared by the feed ↗ button and the At Playhead panel.
+function locateOnTimeline(ts, target, feedEvent) {
+  if (!playheadOn) setScrubber(true);              // ensure the playhead is visible
+  playheadTime = ts;                               // set AFTER setScrubber so it isn't clamped away
+  pendingBarHighlight = target ? { group: target.group, key: String(target.key), ts } : null;
+  if (feedEvent && isDurationMarker(feedEvent)) revealedFeedIds.add(feedEvent._id);
+  const r = currentRange();
+  if (ts < r.start || ts >= r.end) panToTime(ts);  // off-screen → center (re-renders: highlight + playhead apply)
+  else render();                                   // in view → re-render so the highlight + playhead apply
+  if (feedEvent) { const row = $("auditFeed").querySelector(`.feed-row[data-eid="${feedEvent._id}"]`); if (row) flashFeedRow(row); }
+}
+
 /* ---- Scrubber playhead + right-edge "what's running" panel ---- */
 let playheadOn = false, playheadSnap = true, playheadTime = null;
 // The playhead line moves instantly on every pointermove, but the heavy panel rebuild
@@ -773,13 +822,14 @@ function positionPlayhead() {
   const el = $("playhead");
   const panel = $("scrubPanel");
   const xScale = chartX();
-  if (!playheadOn || playheadTime == null || !xScale) { el.style.display = "none"; panel.classList.add("hidden"); return; }
+  if (!playheadOn || playheadTime == null || !xScale) { el.style.display = "none"; panel.classList.add("hidden"); positionMiniPlayhead(); return; }
   const r = currentRange();
   playheadTime = Math.max(r.start, Math.min(r.end, playheadTime)); // clamp into view
   el.style.left = xScale.getPixelForValue(playheadTime) + "px";
   el.style.display = "block";
   $("playheadTime").textContent = fmtTimeDate(playheadTime, 0); // exact date + time incl. seconds
   panel.classList.remove("hidden");
+  positionMiniPlayhead(); // mirror the (clamped, in-window) playhead onto the overview minimap
   // throttle the expensive panel rebuild during an active drag; update immediately otherwise
   if (scrubbing) scheduleScrubPanel(); else updateScrubPanel();
 }
@@ -798,7 +848,7 @@ function updateScrubPanel() {
         const tagWhy = soaking ? "Between watering cycles (soaking — valve off). " :
           iv.kind === "run-terminated" ? "Ended early on a pause/disable/alarm. " :
           iv.manual ? "Started by a person, not the schedule. " : "";
-        const rowTitle = `${tagWhy}Click to jump to this run's start in the audit feed.`;
+        const rowTitle = `${tagWhy}Click to move the scrubber to this run's start, flash its bar, and open it in the audit feed.`;
         return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="${escapeHtml(rowTitle)}">
         <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
         <span class="text-slate-500 text-xs ml-auto">${escapeHtml(fmtTime(iv.start, span))}→${iv.ongoing ? "…" : escapeHtml(fmtTime(iv.end, span))}</span></div>
@@ -829,7 +879,7 @@ function updateScrubPanel() {
       near.map(e => {
         const where = e.zones.length ? `Zone ${e.zones.join(", ")}` : (e.program != null ? `Program ${e.program}` : (e.mainline != null ? `Mainline ${e.mainline}` : ""));
         const detail = [where, whyText(e)].filter(Boolean).join(" — "); // what had the error + what the error was
-        return `<div class="scrub-alert py-1 cursor-pointer hover:bg-slate-800 rounded px-1" data-tsms="${e.ts.getTime()}" title="Alarm/error near the playhead. Click to jump to it in the audit feed.">
+        return `<div class="scrub-alert py-1 cursor-pointer hover:bg-slate-800 rounded px-1" data-tsms="${e.ts.getTime()}" data-eid="${e._id}" title="Alarm/error near the playhead. Click to move the scrubber here, flash its bar, and open it in the audit feed.">
         <div class="flex items-baseline gap-1">
           <span class="text-rose-300 text-xs">${escapeHtml(e.action)}</span><span class="text-slate-500 text-[10px]">${escapeHtml(e.category)}</span>
           <span class="text-slate-500 text-[10px] ml-auto">${escapeHtml(fmtTime(e.ts.getTime(), span))}</span>
@@ -849,11 +899,14 @@ function updateScrubPanel() {
     body.addEventListener("click", ev => {
       const run = ev.target.closest(".scrub-run[data-start]");
       if (run) {
-        revealRunStart(findRunStartEvent(run.getAttribute("data-group"), run.getAttribute("data-key"), Number(run.getAttribute("data-start"))));
+        const g = run.getAttribute("data-group"), k = run.getAttribute("data-key"), s = Number(run.getAttribute("data-start"));
+        const e = findRunStartEvent(g, k, s);
+        // move the playhead to the run's start, flash its bar, and reveal its raw feed row
+        locateOnTimeline(e ? e.ts.getTime() : s, { group: g, key: k }, e);
         return;
       }
-      const a = ev.target.closest(".scrub-alert[data-tsms]");
-      if (a) jumpTo(Number(a.getAttribute("data-tsms")));
+      const a = ev.target.closest(".scrub-alert[data-eid]");
+      if (a) { const e = allEvents[Number(a.getAttribute("data-eid"))]; if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), e); }
     });
   }
 }
@@ -874,44 +927,39 @@ function feedRowHTML(e, idx) {
     </div>
     <div class="hidden px-4 py-3 text-xs leading-relaxed flex flex-wrap" style="background:#0b1220" data-fdetail="${idx}">${detailHTML(e)}</div>`;
 }
-// Sort comparator honoring the active column + direction (numeric for date, natural string else,
-// event time as a stable tiebreak).
-function feedCompare(a, b) {
-  const dir = feedSortDir === "desc" ? -1 : 1;
-  const va = feedSortValue(a, feedSortCol), vb = feedSortValue(b, feedSortCol);
-  let c = feedSortCol === "date" ? va - vb : String(va).localeCompare(String(vb), undefined, { numeric: true });
-  if (!c) c = a.ts.getTime() - b.ts.getTime();
-  return c * dir;
-}
-function renderFeed(inWin) {
+function renderFeed() {
   const host = $("auditFeed");
+  const scroller = host.parentElement; // the .overflow-y-auto container wrapping #auditFeed
   const searching = !!feedQuery;
-  // Search spans the whole loaded log; otherwise the feed is the current window. Duration markers
-  // (run start/done) stay hidden except any explicitly revealed by a "Running now"/bar click.
-  const base = (searching ? filtered : inWin).filter(e => !isDurationMarker(e) || revealedFeedIds.has(e._id));
-  const matched = searching ? base.filter(e => feedMatches(e, feedQuery)) : base;
-  let ordered;
-  if (feedSortCol) {
-    ordered = matched.slice().sort(feedCompare);       // explicit column sort → no alert pinning
-  } else {
-    // default: alarms/errors pinned on top, then chronological
-    const alerts = matched.filter(e => e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
-    const rest = matched.filter(e => !e.isAlert).sort((a, b) => a.ts.getTime() - b.ts.getTime());
-    ordered = alerts.concat(rest);
-  }
-  const alertCount = matched.reduce((n, e) => n + (e.isAlert ? 1 : 0), 0);
+  // The feed lists the WHOLE loaded log (not just the current time window); selectFeedRows applies the
+  // search + column sort / alarm-pinning. Pure + unit-tested so this can't silently regress to windowed.
+  const ordered = selectFeedRows(filtered, { query: feedQuery, sortCol: feedSortCol, sortDir: feedSortDir, revealedIds: revealedFeedIds });
+  // The feed no longer changes when the timeline window pans, so keep the user's scroll position across
+  // such re-renders; only jump back to the top when the actual contents change (filter/search/sort/reveal).
+  const sig = `${feedQuery}${feedSortCol}${feedSortDir}${filtered.length}${revealedFeedIds.size}`;
+  const keepScroll = scroller && sig === lastFeedSig;
+  const prevScroll = keepScroll ? scroller.scrollTop : 0;
+  lastFeedSig = sig;
+  const alertCount = ordered.reduce((n, e) => n + (e.isAlert ? 1 : 0), 0);
   const shown = ordered.slice(0, FEED_CAP);
   // make sure a revealed row survives the cap so the jump can find it
   for (const e of ordered.slice(FEED_CAP)) if (revealedFeedIds.has(e._id)) shown.push(e);
   host.innerHTML = shown.length
     ? shown.map((e, idx) => feedRowHTML(e, idx)).join("")
-    : `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events in this window."}</div>`;
+    : `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events loaded."}</div>`;
+  if (keepScroll) scroller.scrollTop = prevScroll;
   // One delegated listener (attached once) instead of re-binding every row on each render.
   if (!host._delegated) {
     host._delegated = true;
     host.addEventListener("click", ev => {
       const jump = ev.target.closest(".feed-jump[data-tsms]");
-      if (jump) { ev.stopPropagation(); panToTime(Number(jump.getAttribute("data-tsms"))); return; }
+      if (jump) {
+        ev.stopPropagation();
+        const jr = jump.closest(".feed-row");
+        const e = jr && allEvents[Number(jr.getAttribute("data-eid"))];
+        if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), null);
+        return;
+      }
       const row = ev.target.closest(".feed-row");
       if (!row) return;
       const idx = row.getAttribute("data-idx");
@@ -940,10 +988,7 @@ function updateFeedHead() {
 }
 // Recompute just the feed (search/sort changes don't need the chart/swimlane rebuilt).
 function refreshFeed() {
-  if (!allEvents.length) return;
-  const range = currentRange();
-  const inWin = filtered.filter(e => { const t = e.ts.getTime(); return t >= range.start && t < range.end; });
-  renderFeed(inWin);
+  if (allEvents.length) renderFeed();
 }
 
 /* ============================ Filter event wiring ============================ */
@@ -1003,7 +1048,7 @@ $("resetBtn").addEventListener("click", () => {
 $("windowPresets").addEventListener("click", e => {
   const b = e.target.closest("button[data-win]");
   if (!b || !allEvents.length) return;
-  setWindowUnit(b.getAttribute("data-win"), currentRange().start);
+  setWindowUnitCentered(b.getAttribute("data-win")); // center the new window on the scrubber
 });
 $("zoomOutBtn").addEventListener("click", zoomOut);
 $("navPrev").addEventListener("click", () => navShift(-1));
@@ -1108,6 +1153,7 @@ timeWrap.addEventListener("pointerup", e => {
 const miniMap = $("miniMap");
 const miniWindow = $("miniWindow");
 const miniCanvas = $("miniCanvas");
+const miniPlayhead = $("miniPlayhead");
 const miniFull = () => ({ s: dataMinT, e: dataMaxT + 1 });
 function miniX2T(px) { const f = miniFull(), W = miniMap.clientWidth || 1; return f.s + (px / W) * (f.e - f.s); }
 function miniT2X(t) { const f = miniFull(), W = miniMap.clientWidth || 1; return (t - f.s) / (f.e - f.s) * W; }
@@ -1130,9 +1176,7 @@ let viewRaf = null, pendingView = null;
 function setViewRangeLive(start, end) {
   const { s, e } = clampView(start, end);
   pendingView = { s, e };
-  // instant visual feedback without a full render
-  miniWindow.style.left = miniT2X(s) + "px";
-  miniWindow.style.width = Math.max(6, miniT2X(e) - miniT2X(s)) + "px";
+  layoutMiniWindow(s, e); // instant visual feedback without a full render
   if (viewRaf) return;
   viewRaf = requestAnimationFrame(() => {
     viewRaf = null;
@@ -1181,13 +1225,32 @@ function drawMiniDensity() {
   for (const x of alertX) ctx.fillRect(x, 0, 1, 6);
 }
 
+// Mirror the main scrubber playhead onto the full-span minimap (amber marker inside the view-window box),
+// clamped so the 2px line isn't clipped by the minimap's overflow:hidden at the extremes.
+function positionMiniPlayhead() {
+  if (!miniPlayhead) return;
+  if (!playheadOn || playheadTime == null || !allEvents.length) { miniPlayhead.style.display = "none"; return; }
+  const W = miniMap.clientWidth || 1;
+  miniPlayhead.style.left = Math.max(0, Math.min(miniT2X(playheadTime), W - 2)) + "px";
+  miniPlayhead.style.display = "block";
+}
+
+// Lay out the view-window box, clamping it fully inside the track so its border + edge handles are never
+// cut off by the minimap's overflow:hidden at the extremes (and a min-width box near an end stays visible).
+function layoutMiniWindow(startT, endT) {
+  const W = miniMap.clientWidth || 1;
+  let left = miniT2X(startT);
+  const width = Math.max(6, miniT2X(endT) - left);
+  left = Math.max(0, Math.min(left, W - width));
+  miniWindow.style.left = left + "px";
+  miniWindow.style.width = width + "px";
+}
+
 // Position the view-window box + edge labels — cheap, called on every view change (incl. live drag).
 function positionMiniWindow(range) {
   if (!allEvents.length) return;
   const f = miniFull(), span = f.e - f.s;
-  const left = miniT2X(range.start), right = miniT2X(range.end);
-  miniWindow.style.left = left + "px";
-  miniWindow.style.width = Math.max(6, right - left) + "px";
+  layoutMiniWindow(range.start, range.end);
   $("miniStart").textContent = fmtTime(f.s, span);
   $("miniEnd").textContent = fmtTime(f.e, span);
 }
@@ -1362,8 +1425,8 @@ function buildGuide() {
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span) or the <b>Window</b> presets
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>). <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
-        <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to jump the Activity Audit Feed straight to that event’s raw log line (it scrolls, expands and flashes it). <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to move the timeline to that moment. The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
+        <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to move the scrubber right onto it, flash its run bar on the timeline, and open its raw log line in the Activity Audit Feed. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to drop the scrubber on that moment and flash its run bar. The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
     </div>`) +
 
     sec("The panes, top to bottom", li([

@@ -80,6 +80,16 @@ export function feedMatches(e, query) {
   return toks.every(t => hay.includes(t));
 }
 
+// The run lane an event belongs to (for flashing its bar on the timeline). Mirrors subjectSummary's
+// precedence: zones first (a zone event can also carry a program), then mainline, then program. Returns
+// { group, key } or null when the event maps to no run lane (e.g. a plain system/device event).
+export function eventRunTarget(e) {
+  if (e.zones.length) return { group: "Zone", key: e.zones[0] };
+  if (e.mainline != null) return { group: "Mainline", key: String(e.mainline) };
+  if (e.program != null) return { group: "Program", key: String(e.program) };
+  return null;
+}
+
 // Comparable value for sorting a feed row by a column: numeric epoch for "date", else the display string.
 export function feedSortValue(e, col) {
   switch (col) {
@@ -89,4 +99,26 @@ export function feedSortValue(e, col) {
     case "trigger":  return e.trigger || "";
     default:         return e.ts.getTime(); // "date"
   }
+}
+
+// Choose + order the audit-feed rows from the WHOLE loaded log (never window-limited):
+//   - drop duration markers (drawn as swimlane bars) unless explicitly revealed by a jump,
+//   - keep only search matches when `query` is set,
+//   - order by the active column (numeric for date, natural string else, event-time tiebreak) when
+//     `sortCol` is set, otherwise pin alarms/errors on top then chronological.
+// Returns the full ordered list; the caller applies FEED_CAP. Pure → unit-tested.
+export function selectFeedRows(events, { query = "", sortCol = null, sortDir = "asc", revealedIds = new Set() } = {}) {
+  const base = events.filter(e => !isDurationMarker(e) || revealedIds.has(e._id));
+  const matched = query ? base.filter(e => feedMatches(e, query)) : base;
+  if (sortCol) {
+    const dir = sortDir === "desc" ? -1 : 1;
+    return matched.slice().sort((a, b) => {
+      const va = feedSortValue(a, sortCol), vb = feedSortValue(b, sortCol);
+      let c = sortCol === "date" ? va - vb : String(va).localeCompare(String(vb), undefined, { numeric: true });
+      if (!c) c = a.ts.getTime() - b.ts.getTime();
+      return c * dir;
+    });
+  }
+  const byT = (a, b) => a.ts.getTime() - b.ts.getTime(); // default: alarms pinned, then chronological
+  return matched.filter(e => e.isAlert).sort(byT).concat(matched.filter(e => !e.isAlert).sort(byT));
 }

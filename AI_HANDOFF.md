@@ -87,7 +87,40 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Removed the redundant Zone filter from "More filters"** (uncommitted) — the standalone Zone
+1. **Audit-feed overhaul: whole-log list + search/sort + timeline↔feed jumps, orphan-zone dropdown fix, and
+   navigation refinements** (branch `feature/audit-feed-search-jump`). The pieces:
+   - **Feed now lists the whole loaded log**, not just the current window (`renderFeed()` drops its range
+     param and bases off `filtered`). The stat strip / swimlane / chart stay window-scoped. Because the feed
+     no longer changes when the window pans, `renderFeed` preserves the scroll container's `scrollTop` across
+     renders whose content signature (`feedQuery`/sort/`filtered.length`/`revealedFeedIds.size`) is unchanged.
+   - **Whole-log search + column sort** — pure helpers `feedSearchText`/`feedMatches`/`feedSortValue` in
+     `classify.js` (unit-tested). `#feedSearch` token-ANDs across each event's cells + raw line; `#feedHead`
+     is a clickable column header cycling asc → desc → off. Feed-only `refreshFeed()`; both reset on new-file
+     load + Reset Filters.
+   - **Per-row "↗ timeline" button** and **bar clicks** + **At-Playhead items** all route through
+     `locateOnTimeline(ts, target, feedEvent)`: it turns the scrubber on, drops the playhead exactly on `ts`,
+     sets `pendingBarHighlight` (consumed at the end of `renderSwimlane`) so `flashBar` pulses every segment
+     of the matched run (amber `.tl-hit`), pans if off-window, and optionally reveals+flashes the raw feed
+     row. Target lane comes from the pure `eventRunTarget(e)`. Timeline **run bars** now jump to the feed
+     instead of zooming (removed the unused `zoomTo`).
+   - **Orphan-zone program dropdown fix** — pure `zoneRunInProgram` in `runs.js` (unit-tested): a zone run
+     whose PG tag matches **no** real program run (e.g. a `ZN,WT` stamped with a program that never started)
+     is attributed to the program whose run window overlaps it, so expanding that program lists the zones
+     that actually ran under it. Normal (matching-PG) case unchanged.
+   - **Navigation refinements**: (a) window presets now open a window of that unit's duration **centered on
+     the scrubber** (`setWindowUnitCentered` → pure `centeredWindow`/`WINDOW_UNIT_MS`; `snapWindow` still backs
+     default/Reset/nav); (b) the minimap view-box + edge handles no longer clip at the extremes
+     (`layoutMiniWindow` clamps the box inside the track, handles flush at `0`); (c) `#miniPlayhead`
+     (`positionMiniPlayhead`, hooked from `positionPlayhead`) **mirrors the scrubber onto the minimap** live.
+   - **Feed selection is now a pure, tested function** — `selectFeedRows(events, {query, sortCol, sortDir,
+     revealedIds})` in `classify.js`; `renderFeed` just calls it + caps. Added a regression test mirroring the
+     6/28→7/2 report (whole-log, date sort asc/desc, search across days, revealed markers, alarm pinning) so
+     "the feed is the whole log" can't silently regress. Verified the live pipeline on `Events1000.csv`
+     (235 rows, 6/28→7/2) after a user report that turned out to be a stale browser bundle.
+   - **90 Vitest tests green, build clean.** DOM interactions verified by code review + dev-server HMR + an
+     ad-hoc Node pipeline check (no Chrome DevTools MCP this session). Mirrored in `docs/HOW_TO_USE.md`,
+     `docs/DEMO_GUIDE.md`, the in-app guide, and `NOTES.md`. Test data `Events1000.csv` is local-only (never commit).
+2. **Removed the redundant Zone filter from "More filters"** (uncommitted) — the standalone Zone
    dropdown overlapped confusingly with the **Zones** lane picker, so it was dropped; Category / Action /
    Trigger / Min-Flow stay (with no feed text-search, they're the only per-type feed narrowing). Deleted
    the `#zoneFilter` markup (`index.html`) and every reference in `src/app.js` (`fillSelect`, the

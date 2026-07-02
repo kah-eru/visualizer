@@ -33,6 +33,9 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .tl-bar { position: absolute; top: 2px; height: 18px; border-radius: 4px; cursor: pointer; overflow: hidden;
   font-size: 10px; line-height: 18px; color: #0b1220; font-weight: 600; padding: 0 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 .tl-bar:hover { outline: 2px solid #e2e8f0; }
+/* "locate on timeline" flash — a spreading amber ring matching the scrubber playhead (#fbbf24) */
+@keyframes barHit { from { box-shadow: 0 0 0 3px #fbbf24, 0 0 10px 2px rgba(251,191,36,0.9); } to { box-shadow: 0 0 0 3px rgba(251,191,36,0), 0 0 10px 2px rgba(251,191,36,0); } }
+.tl-bar.tl-hit { animation: barHit 1.3s ease-out; z-index: 6; }
 .tl-ongoing { background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.18) 5px, rgba(0,0,0,0.18) 10px); }
 .tl-bar.clip-l { border-left: 3px solid #e2e8f0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .tl-bar.clip-r { border-right: 3px solid #e2e8f0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
@@ -72,11 +75,13 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 /* reserve space for the scrubber drawer so it never overlaps the dashboard */
 #appRoot.scrub-open { padding-right: 300px; }
 /* overview minimap */
+/* scrubber position mirrored onto the minimap (amber, matches the main #playhead) */
+#miniPlayhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fbbf24; box-shadow: 0 0 4px #fbbf24; pointer-events: none; z-index: 4; display: none; }
 #miniWindow { cursor: grab; }
 #miniWindow.dragging { cursor: grabbing; }
 .mini-handle { position: absolute; top: 0; bottom: 0; width: 6px; background: #38bdf8; cursor: ew-resize; }
-.mini-handle[data-edge="L"] { left: -1px; border-radius: 5px 0 0 5px; }
-.mini-handle[data-edge="R"] { right: -1px; border-radius: 0 5px 5px 0; }
+.mini-handle[data-edge="L"] { left: 0; border-radius: 5px 0 0 5px; }
+.mini-handle[data-edge="R"] { right: 0; border-radius: 0 5px 5px 0; }
 /* swimlane run colors */
 .run-scheduled { background:#22c55e; }
 .run-manual { background:#f59e0b; }

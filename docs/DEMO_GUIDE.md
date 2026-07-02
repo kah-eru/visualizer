@@ -65,18 +65,21 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
    - 🟩 green = scheduled, 🟧 amber (+ "M" badge) = manual, 🟥 red/hatched = stopped early.
 
 ### Act 2 — "Read a run" (2 min)
-4. **Click a bar** → it zooms to that run.
+4. **Click a bar** → the Activity Audit Feed jumps to that run's raw start line and flashes it.
 5. Use the **Window presets** (`All · Month · Week · Day · Hour · Min · Sec`) and the **minimap** to move
-   around. **Back** undoes a zoom.
+   around — a preset opens that much time **centered on the scrubber**, so zooming keeps your moment put.
+   **Back** undoes a zoom.
    - **Say:** *"Same time axis everywhere — the chart, the bars, the markers all stay aligned."*
 
 ### Act 3 — "What was happening at 6:05am?" (3 min) — *the scrubber*
-6. Make sure **Scrubber** is on; **drag the playhead** across the timeline.
+6. Make sure **Scrubber** is on; **drag the playhead** across the timeline — an amber marker on the minimap
+   mirrors its position live.
 7. The **"At Playhead"** panel (right side) lists exactly what was running at that instant — programs,
    zones, mainlines, and any active alerts.
-8. **Click an item in that panel** → the Activity Audit Feed jumps to that event's raw log line and
-   flashes it.
-   - **Say:** *"So you can go from 'what was running' straight to the exact raw evidence."*
+8. **Click an item in that panel** → the scrubber snaps onto that run, its bar **flashes** on the
+   timeline, and the Activity Audit Feed opens its raw log line.
+   - **Say:** *"So you can go from 'what was running' straight to the exact raw evidence — on the
+     timeline and in the log at once."*
 
 ### Act 4 — The hero moments (3 min)
 9. **Cycle-and-soak zone** (see §4a). Find the zone that waters in cycles. With the **Soak** toggle on
@@ -93,9 +96,13 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 11. Toggle **Flow** → overlays the hydraulic actual-vs-expected flow / pressure chart.
 12. Toggle **Events** → adds the **Interventions & Alerts** lane; click a marker to see the decoded
     "why" (pause / disable / alarm reason).
-13. Scroll to the **Activity Audit Feed** — full searchable event list, alarms pinned on top. Click a
-    row to expand its raw detail. Show the sidebar **filters** briefly (Programs/Zones/Mainlines, run
-    type, human-audit-only, flow variance).
+13. Scroll to the **Activity Audit Feed** — **every event in the whole log** (not just the window),
+    alarms pinned on top. Click a row to expand its raw detail, or its **↗ timeline** button to drop the
+    scrubber on that moment and flash its bar. **Search** across the whole log and **click a column
+    header** to sort. Show the sidebar **filters** briefly (Programs/Zones/Mainlines, run type,
+    human-audit-only, flow variance).
+    - **Say:** *"The feed is the entire log — search it, sort it, and jump from any row straight to that
+      moment on the timeline."*
 14. **Download PDF** → the whole dashboard exports as shown.
     - **Say:** *"One click to hand a customer or a colleague a shareable audit."*
 
@@ -134,10 +141,12 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 - **Run classification** — scheduled (green) vs. manual (amber + "M") vs. stopped-early (red/hatched).
 - **Cycle-and-soak splitting** (Soak toggle) + **no-DONE end inference**.
 - **Minimap + window presets + zoom/back + arrow-key stepping.**
-- **Scrubber** with live "At Playhead" panel; click-through to the raw feed row.
+- **Scrubber** with live "At Playhead" panel; click an item to snap the playhead, flash the run bar, and open the feed row.
 - **Flow / pressure chart** (Flow toggle) — actual vs. expected.
 - **Interventions & Alerts lane** (Events toggle) with decoded "why" reasons.
-- **Activity Audit Feed** — searchable, alarms pinned, expandable raw rows.
+- **Activity Audit Feed** — the whole log (not just the window), searchable, sortable by any column,
+  alarms pinned, expandable raw rows; each row's **↗ timeline** button drops the scrubber on that moment
+  and flashes its bar. Clicking a timeline **run bar** jumps the feed to that run's start line.
 - **Rich filters** — date/time range, per-program/zone/mainline lanes, run type, human-audit-only,
   substation, flow-variance %, alerts-only, category/action/trigger.
 - **Reference glossary** — decodes every category / action / trigger / status / cause / message code

@@ -283,42 +283,63 @@ index.html
   **Alerts here** (alerts within tolerance). Each alert row shows a second line:
   **where** (Zone/Program/Mainline) **—** **what** (`whyText`). This was a specific user request:
   "show the error like it is but also what zone had the error and what the error was."
-- **Panel items jump to the feed** (`revealRunStart`/`findRunStartEvent`, ≈L690): every row in the panel
-  is clickable. Clicking a **Running now** run resolves it back to its raw **start** event
-  (`findRunStartEvent` matches group+key+`start` ms in `filtered`) and jumps to it in the audit feed;
-  clicking an **alert** row uses the existing `jumpTo`. Because run start/done rows are normally hidden
-  from the feed (`isDurationMarker`), the start event's id is added to **`revealedFeedIds`** (events get a
-  stable `_id` at load) so `renderFeed` force-includes that one row (and protects it from the `FEED_CAP`
-  slice); if the event is outside the current window, `revealRunStart` `panToTime`s to it first. Then the
-  row is scrolled/expanded/flashed via the shared `flashFeedRow`.
+- **Panel items "locate on timeline"** (`locateOnTimeline`): every row in the panel is clickable. Clicking a
+  **Running now** run resolves it to its raw **start** event (`findRunStartEvent` matches group+key+`start` ms
+  in `filtered`); clicking an **alert** row uses its `data-eid`. Either way `locateOnTimeline(ts, target, e)`
+  (1) ensures the scrubber is on and drops the playhead exactly on `ts`, (2) sets `pendingBarHighlight`
+  (`{group,key,ts}`) which `renderSwimlane` consumes to `flashBar` every segment of the matching run (amber
+  `.tl-hit` ring), and (3) reveals the raw feed row. Because run start/done rows are normally hidden
+  (`isDurationMarker`), the start event's `_id` is added to **`revealedFeedIds`** (stable `_id` at load) so
+  `renderFeed` force-includes it (and protects it from the `FEED_CAP` slice); off-window events get a
+  `panToTime` first; then the row is scrolled/expanded/flashed via the shared `flashFeedRow`.
+- The audit feed's per-row **↗ timeline** button uses the same `locateOnTimeline` (target from the pure
+  `eventRunTarget(e)`), but with no feed reveal — the row is already on screen.
 - Opening/closing the drawer changes the chart's available width, so `setScrubber` sets
   `hydroDirty=true` and re-renders so bars realign to the narrower canvas.
 - `#appRoot.scrub-open { padding-right:300px }` reserves space; `<main>` has `min-w-0` so flex content
   shrinks instead of spilling **under** the fixed drawer (this was an actual overlap bug — keep `min-w-0`).
 
-### Audit feed (`renderFeed`, ≈L1392)
-- Shows instantaneous events; **excludes** duration markers (`isDurationMarker`, ≈L1369) since those
-  are drawn as swimlane bars.
-- Alarms pinned on top, then chronological — unless a column sort is active (`feedSortCol`), which sorts
-  the whole set by that column (no pinning). Severity left-border accent via `feedSeverity`.
+### Audit feed (`renderFeed`)
+- Lists the **whole loaded log** (`filtered`), **not** just the current time window — the stat strip and
+  swimlane stay window-scoped, but the feed is a full browse/search list. `renderFeed()` takes no range.
+- The row **selection + ordering is a pure, unit-tested function** — `selectFeedRows(events, {query, sortCol,
+  sortDir, revealedIds})` in `classify.js`. It drops duration markers (`isDurationMarker`) unless in
+  `revealedIds`, keeps only `feedMatches` when searching, and orders by the active column (`feedSortValue`,
+  numeric for date) or — with no sort — pins alarms then chronological. `renderFeed` just calls it, then
+  applies `FEED_CAP` + DOM. (Extracted so "the feed is the whole log, sortable 6/28→7/2" is covered by
+  `npm test`, not eyeballing.)
 - Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
 - Click a row → expand detail (chips + raw CSV line). Each row also has a right-side `.feed-jump` button →
-  `panToTime` (moves the timeline to that event; `stopPropagation` so it doesn't toggle the row).
+  `locateOnTimeline` (drops the scrubber on the event + flashes its run bar; `stopPropagation` so it doesn't
+  toggle the row).
 - **Search + sort** (pure helpers `feedSearchText`/`feedMatches`/`feedSortValue` in `classify.js`): the
-  `#feedSearch` box searches across the **whole** log (`filtered`, not just the window) — token-AND over the
-  event's cells + raw line; non-empty query switches the base set from `inWin` to `filtered`. `#feedHead` is a
+  `#feedSearch` box filters the whole-log feed — token-AND over the event's cells + raw line. `#feedHead` is a
   clickable column header (cycles asc → desc → off). Both use `refreshFeed()` (feed-only, no chart rebuild).
   Search/sort reset on new-file load and on Reset Filters.
+- Because the feed no longer changes when the window pans, `renderFeed` preserves the scroll container's
+  `scrollTop` across renders whose content signature (`feedQuery`/sort/`filtered.length`/`revealedFeedIds.size`)
+  is unchanged; it resets to the top only when that signature changes.
 
-### Minimap (≈L1588+)
+### Minimap
 - Full-data-span overview with a draggable/resizable view-window box. Canvas density bins + red alert
   ticks (`drawMiniDensity`). Drag the box to pan, drag edge handles to resize, click empty track to
   center. Excluded from PDF (`data-html2canvas-ignore`).
+- `layoutMiniWindow(startT, endT)` positions the box and **clamps it fully inside the track**
+  (`left ∈ [0, W−width]`, handles flush at `0`) so the border + edge handles aren't cut off by the track's
+  `overflow:hidden` at the extremes, and a min-width box near an end stays visible. Used by both
+  `positionMiniWindow` and the live-drag path.
+- `#miniPlayhead` (`positionMiniPlayhead`) **mirrors the scrubber playhead** onto the full-span minimap — an
+  amber marker at `miniT2X(playheadTime)` (clamped so it isn't clipped). Called from `positionPlayhead`, so
+  it tracks the scrubber in real time and lands inside the view-window box (the playhead time is clamped into
+  the window). Hidden when the scrubber is off.
 
 ### Filters & windowing
-- Window presets All/Month/Week/Day/Hour/Min/Sec snap to calendar boundaries (`snapWindow`, ≈L825).
+- Window presets All/Month/Week/Day/Hour/Min/Sec: clicking one now builds a window of that unit's duration
+  **centered on the scrubber** (`setWindowUnitCentered` → `centeredWindow`/`WINDOW_UNIT_MS` in `format.js`),
+  so zooming in/out keeps the playhead put (falls back to the view center when the scrubber is off; **All** =
+  full span). `snapWindow` (calendar-aligned) still backs the default load, Reset, and ◀/▶ nav-stepping.
 - Default window on load: the calendar **day** containing the file's **last** event.
-- ◀ ▶ buttons and ←/→ arrow keys step by the current window (`navShift`).
+- ◀ ▶ buttons and ←/→ arrow keys step by the current window (`navShift`, calendar-aligned for unit windows).
 - "Advanced" reveals noise categories; "Human audit only" = User/Administrator triggers; "Alerts only";
   SubStation isolation; flow-variance |AC−EX|% (only shown when `hasHydro`).
 

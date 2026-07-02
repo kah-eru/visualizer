@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
-  windowLabel, snapWindow, eventVariancePct, categoryColor,
+  windowLabel, snapWindow, centeredWindow, eventVariancePct, categoryColor,
 } from "../src/format.js";
 
 const MIN = 60000, HOUR = 3600000, DAY = 86400000;
@@ -98,6 +98,17 @@ describe("snapWindow (boundaries via local getters — TZ-agnostic)", () => {
   });
   it("unknown unit falls back to the full-data bounds", () => {
     expect(snapWindow("all", 0, { min: 5, max: 10 })).toEqual({ start: 5, end: 11 });
+  });
+});
+
+describe("centeredWindow (½ the unit on each side of a point)", () => {
+  it("centers an hour/minute window on the given time", () => {
+    expect(centeredWindow("hour", 1_000_000)).toEqual({ start: 1_000_000 - 1_800_000, end: 1_000_000 + 1_800_000 });
+    expect(centeredWindow("minute", 1_000_000)).toEqual({ start: 1_000_000 - 30_000, end: 1_000_000 + 30_000 });
+  });
+  it("returns null for 'all' or an unknown unit (caller uses the full span)", () => {
+    expect(centeredWindow("all", 1_000_000)).toBeNull();
+    expect(centeredWindow("nope", 1_000_000)).toBeNull();
   });
 });
 

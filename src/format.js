@@ -84,6 +84,18 @@ export function snapWindow(unit, anchorMs, bounds = {}) {
   return { start, end };
 }
 
+// Approximate duration of each window-preset unit, for a window centered on a point (the scrubber)
+// rather than snapped to calendar boundaries.
+export const WINDOW_UNIT_MS = { second: 1000, minute: 60000, hour: 3600000, day: 86400000, week: 604800000, month: 2592000000 };
+
+// A window of `unit`'s duration centered on `center` (½ the unit on each side). Returns null for "all"
+// or any unknown unit so the caller can fall back to the full data span.
+export function centeredWindow(unit, center) {
+  const w = WINDOW_UNIT_MS[unit];
+  if (!w) return null;
+  return { start: center - w / 2, end: center + w / 2 };
+}
+
 /* ---- hydraulic variance ---- */
 export function eventVariancePct(e) {
   const ac = e.pairs.AC ? e.pairs.AC.value : null;
