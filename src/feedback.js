@@ -91,19 +91,34 @@ function buildModal() {
   });
 }
 
-function buildPayload() {
+// The COMPLETE feedback report. Every field the app ever sends is assembled here and only
+// here, from the inputs passed in — never from parsed events — so the privacy hard rule
+// ("CSV contents never leave the browser") is a tested invariant, not a convention:
+// tests/feedback.test.js loads real parsed rows and asserts none of their content (raw
+// lines, key=value pairs) appears anywhere in the serialized report, and that the report
+// carries exactly these whitelisted keys. If you add a field, extend that test.
+export function assembleReport({ message = "", email = "", diagnostics = {}, errors = [] }) {
   return {
-    message: modal.querySelector("#fbMessage").value.trim(),
-    email: modal.querySelector("#fbEmail").value.trim(),
+    message,
+    email,
     version: APP_VERSION,
     buildTime: BUILD_TIME,
     capturedAt: new Date().toISOString(),
     url: location.href,
     userAgent: navigator.userAgent,
     viewport: `${window.innerWidth}x${window.innerHeight}`,
+    diagnostics,
+    errors,
+  };
+}
+
+function buildPayload() {
+  return assembleReport({
+    message: modal.querySelector("#fbMessage").value.trim(),
+    email: modal.querySelector("#fbEmail").value.trim(),
     diagnostics: safe(getDiagnostics),
     errors: getErrorLog(),
-  };
+  });
 }
 
 function safe(fn) {

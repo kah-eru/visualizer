@@ -18,6 +18,10 @@ testmanual.csv
 Evnt_2*.csv
 # Real customer support logs dropped in for local diagnosis (never commit).
 Events_test.csv
+Events1000.csv
+
+# Baseline's internal protocol spec — local reference only, never publish (this repo is public).
+Baseline Protocol Specification - BaseManager Opcodes.md
 
 # Personal (per-machine) Claude Code settings; shared settings live in .claude/settings.json
 .claude/settings.local.json

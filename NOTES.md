@@ -93,6 +93,12 @@ below for the user's stated priorities.)
     categories are noise, hidden by default.
 - Sample data: `Evnt_202605.csv` (note: this file has **zero AC/EX/PR flow telemetry**, so the Flow
   chart shows empty — that drove the "Flow off by default" design).
+- `Baseline Protocol Specification - BaseManager Opcodes.md` (repo root, **local-only / gitignored —
+  never commit**, this repo is public): Baseline's internal BaseManager protocol spec. Source for the
+  four human trigger tiers (`HUMAN_TRIGGERS`), the Status enumeration, and SR ("start condition") /
+  SP ("stop condition") semantics. Note its opcode/parameter/property namespaces are **not** the
+  event-log column namespaces (e.g. spec parameter `AC` = ASCII file type vs. event-log `AC` = actual
+  flow) — cross-check against real rows, never bulk-merge.
 
 ---
 
@@ -192,6 +198,13 @@ On top of the render split above, a later pass trimmed the initial load and the 
   `_delegated` flag, and resolve the target with `e.target.closest(...)` — instead of re-binding a
   listener on every feed row / swimlane bar on each re-render. (Re-render still rebuilds `innerHTML`; the
   delegated listener on the stable parent survives, so it's only wired once.)
+- **Scrubber hot-path** — `visibleRunsAt()` is memoized (`visRunsCache`, keyed on `runGen` + the lane /
+  run-type selections), so the per-`pointermove` `snapTime` and per-frame panel rebuild reuse one array
+  instead of re-spreading every run. `runGen` is bumped in `applyFilters` (alongside the `runCache` reset).
+  The panel's flow carry-forward walks `telemetry` — a chronological AC/EX/PR-only subset of `filtered`
+  built in `applyFilters` (usually hundreds of rows) — and stops once past the playhead, instead of scanning
+  all of `filtered` each frame.
+- **Feed rebuild skip** — see §6 Audit feed: `renderFeed` early-returns on an unchanged content signature.
 
 ---
 
@@ -240,6 +253,11 @@ index.html
   - **program:** `PG` SR/RN/MR → SP/DN/OF
   - **zone:** `ZN` WT → DN
   - **mainline:** `ML` RN → OF
+  - **Zone `SR`/`SP` are deliberately NOT zone-run boundaries.** In the real log `ZN,SR` (schedule/queue)
+    fires at the same second as the `ZN,WT` that actually starts watering (the controller logs *two* `SR`
+    lines — DT- and SY-triggered — per run), so only `WT`/`MR` open a zone run. And `ZN,SP` (a program
+    cascade stop) always trails a same-second `ZN,DN` that has already closed the run, so it never creates
+    or extends a bar. These invariants are pinned by `runs.test.js`.
   - A `PA` (pause) or `DR` (drop) closes an open run as **terminated** (red hatch).
   - An unclosed run at the end of data is **ongoing** (hatch, "ongoing" label).
   - **Zone no-`DN` inference** (`closeOpenZoneRun` in `runs.js`): a faulted zone can keep getting
@@ -261,7 +279,10 @@ index.html
     The scrubber panel tags a zone "· soaking" (dimmed dot) when the playhead is in one of its soak
     segments. Zone-only — programs/mainlines never soak.
 - Run color: scheduled = green, manual = amber, terminated = red. Manual is detected via
-  `actCode==="MR"` or trigger User/Operator. Zone/mainline bars use a per-key color with a status hatch overlay.
+  `actCode==="MR"` or a **human trigger** — `HUMAN_TRIGGERS` in `constants.js` =
+  User/Operator/Programmer/Administrator (`US`/`OP`/`PR`/`AD`, the four human tiers in the BaseManager
+  protocol spec's event-cause list). The **same** set backs the sidebar "Human audit only" filter, so
+  "is this a person?" is answered identically in both places. Zone/mainline bars use a per-key color with a status hatch overlay.
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).
   Default: programs & mainlines **all**, zones **none**. Programs are expandable to their zones (click the label).
 - Each bar: click body → `revealRunStart(findRunStartEvent(group,key,runStart))` — scroll/expand/flash the
@@ -309,6 +330,13 @@ index.html
   applies `FEED_CAP` + DOM. (Extracted so "the feed is the whole log, sortable 6/28→7/2" is covered by
   `npm test`, not eyeballing.)
 - Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
+- **Noise-category alerts are NOT pinned.** `selectFeedRows`'s default order pins `isAlert && !isNoise`, so
+  a two-wire / network "error" (`TW,ER` — can be 90%+ of a real support log) still shows in-line with its
+  red styling + timeline ticks but no longer buries real events when **Advanced** is on. (The `feed-pinned`
+  CSS class in `feedRowHTML` is a per-alert severity style, independent of this ordering.)
+- **Search is cached + debounced.** `feedSearchText` memoizes its haystack on the event (`e._searchText`;
+  events are immutable after load) and `#feedSearch` is debounced ~150 ms, so a keystroke doesn't rebuild
+  tens of thousands of haystacks. Column sort decorate-sort-undecorates (one `feedSortValue` per row).
 - Click a row → expand detail (chips + raw CSV line). Each row also has a right-side `.feed-jump` button →
   `locateOnTimeline` (drops the scrubber on the event + flashes its run bar; `stopPropagation` so it doesn't
   toggle the row).
@@ -316,9 +344,11 @@ index.html
   `#feedSearch` box filters the whole-log feed — token-AND over the event's cells + raw line. `#feedHead` is a
   clickable column header (cycles asc → desc → off). Both use `refreshFeed()` (feed-only, no chart rebuild).
   Search/sort reset on new-file load and on Reset Filters.
-- Because the feed no longer changes when the window pans, `renderFeed` preserves the scroll container's
-  `scrollTop` across renders whose content signature (`feedQuery`/sort/`filtered.length`/`revealedFeedIds.size`)
-  is unchanged; it resets to the top only when that signature changes.
+- Because the feed no longer changes when the window pans, `renderFeed` **skips the whole rebuild** when its
+  content signature (`feedQuery`/sort/`filtered.length`/`revealedFeedIds.size`) is unchanged — it early-returns
+  before `selectFeedRows` + `innerHTML`, so the DOM (incl. expanded rows and scroll position) is left intact.
+  A changed signature rebuilds and resets scroll to the top; `applyFilters` sets `lastFeedSig = null` so a
+  same-length filter swap still forces a rebuild.
 
 ### Minimap
 - Full-data-span overview with a draggable/resizable view-window box. Canvas density bins + red alert
@@ -340,8 +370,9 @@ index.html
   full span). `snapWindow` (calendar-aligned) still backs the default load, Reset, and ◀/▶ nav-stepping.
 - Default window on load: the calendar **day** containing the file's **last** event.
 - ◀ ▶ buttons and ←/→ arrow keys step by the current window (`navShift`, calendar-aligned for unit windows).
-- "Advanced" reveals noise categories; "Human audit only" = User/Administrator triggers; "Alerts only";
-  SubStation isolation; flow-variance |AC−EX|% (only shown when `hasHydro`).
+- "Advanced" reveals noise categories; "Human audit only" = `HUMAN_TRIGGERS`
+  (User/Operator/Programmer/Administrator); "Alerts only"; SubStation isolation;
+  flow-variance |AC−EX|% (only shown when `hasHydro`).
 
 ---
 
@@ -370,6 +401,17 @@ index.html
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
+- **BaseManager protocol-spec cross-check** (uncommitted) — verified the repo against the local-only
+  vendor spec (see §1 Related context files): added `PR` (Programmer) as the fourth `HUMAN_TRIGGERS`
+  tier, `FL:"Water Full"` to `STATUS_MAP`, `DF` (design flow) to `KEY_INFO`; gitignored the spec;
+  extracted `assembleReport` in `feedback.js` and added `tests/feedback.test.js` pinning the
+  "no CSV content in the feedback report" privacy invariant; deleted stale root artifacts.
+- **Repo-analysis P0–P2 fixes** (uncommitted) — privacy gitignore, `CATEGORY_MAP` real-log codes,
+  shared `HUMAN_TRIGGERS`, noise-alert de-pinning, feed-rebuild skip + search cache + scrubber memo/
+  telemetry subset. Driven by `REPO_ANALYSIS_PLAN.md`; see §4/§6 for the mechanisms.
+- **Audit-feed overhaul** (branch `feature/audit-feed-search-jump`) — whole-log feed + search/sort,
+  timeline↔feed jumps via `locateOnTimeline`, orphan-zone dropdown fix, scrubber-centered window
+  presets, minimap clamp + playhead mirror. See §6 Audit feed / Filters & windowing.
 - **Removed the redundant Zone filter** (uncommitted) — the standalone Zone dropdown in "More filters"
   overlapped the **Zones** lane picker, so it's gone (Category/Action/Trigger/Min-Flow stay). All filters
   are applied in one place — `applyFilters()` in `src/app.js` — and were re-verified working in-browser.

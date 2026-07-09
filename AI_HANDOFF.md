@@ -76,18 +76,70 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-07-01)
+## Current state (as of 2026-07-09)
 
-- **Version:** 1.0.0. **Branch:** `main`. Working tree clean at handoff.
+- **Version:** 1.0.0. **Branch:** `main`.
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
-- **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`) is covered by Vitest. The DOM
-  render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those in a
-  browser.
-- **Performance:** initial JS ≈219 kB (gzip ≈78 kB) after slimming Chart.js and lazy-loading html2pdf.
+- **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
+  the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **104 tests**.
+  The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
+  in a browser.
+- **Performance:** initial index JS ≈245 kB (gzip ≈86 kB); html2pdf (~638 kB) stays lazy-loaded on export.
 
 ## Last session (most recent first)
 
-1. **Audit-feed overhaul: whole-log list + search/sort + timeline↔feed jumps, orphan-zone dropdown fix, and
+1. **BaseManager protocol-spec cross-check + privacy-test gate + P0 cleanup finish** (uncommitted).
+   Verified the previous session's docs/code against `REPO_ANALYSIS_PLAN.md` (all P0–P2 claims held;
+   102 tests were green) and cross-checked the whole repo against the vendor's internal
+   `Baseline Protocol Specification - BaseManager Opcodes.md` (repo root, now **gitignored — local-only,
+   never commit**; referenced in `NOTES.md` §1). Spec agreed with `STATUS_MAP`, `EVENT_CAUSE_MAP`,
+   SR/SP semantics, GPM/PSI units, and the flush schedule; namespaces confirmed as distinct from the
+   event-log columns (don't merge). Gaps fixed:
+   - **`PR` (Programmer) added to `HUMAN_TRIGGERS`** (`US/OP/PR/AD` — the spec's four human tiers), so a
+     Programmer-triggered run reads as manual and passes "Human audit only"; wording updated in
+     `docs/HOW_TO_USE.md`, the `index.html` tooltips, the in-app guide, and `NOTES.md`; `runs.test.js`
+     extended. (No PR rows exist in any local log — future-proofing only.)
+   - **Spec-derived map additions:** `STATUS_MAP` `FL:"Water Full"`; `KEY_INFO` `DF` (design flow, GPM —
+     real `ZN,SR` rows carry it); `GENERAL_NOTES` now notes Error entries flush immediately.
+   - **Privacy invariant is now CI-gated:** extracted `assembleReport()` in `src/feedback.js` (the single
+     place the outgoing report is built; `buildPayload` delegates) and added `tests/feedback.test.js` —
+     real `parseRow` events, serialized report must contain no raw line / pair values / extras, and the
+     top-level key whitelist is pinned. **102 → 104 tests.**
+   - **P0.4 artifact cleanup:** deleted `image.png` (1.6 MB), the stray screenshot, `index.html.bak`.
+   - `REPO_ANALYSIS_PLAN.md` annotated with outcomes (P0–P2 done; 2.3 `ZN,SP` decided as **no change**;
+     P3/P4 deferred) so it can be committed as the record of the sweep.
+1. **Repo-analysis P0–P2 fixes: privacy, category labels, actor-code unification, noise-alert de-pinning,
+   and feed/scrubber performance** (uncommitted). Driven by `REPO_ANALYSIS_PLAN.md`. The pieces:
+   - **P0 — privacy & labels.** Gitignored `Events1000.csv` (a real support log that was untracked but not
+     ignored). Removed a dead duplicate `SS` key in `KEY_INFO`. Extended `CATEGORY_MAP` (`src/constants.js`)
+     with the real-log column-B codes it was missing (`PC`=Control Point, `SB`=SubStation, `MG`=Message,
+     `PZ`=Program Zone, `AP`/`BK`/`CM`/`CN`/`ED`/`EM`/`EZ`/`NW`, `FL`=Flash Archive) so they read as words
+     instead of raw codes — label-only, `NOISE_CATCODES` unchanged.
+   - **P1 — decided behavior changes + tests.** New shared `HUMAN_TRIGGERS = {US,OP,AD}` in `constants.js`
+     now backs **both** the manual-run classifier (`runs.js` `makeRun`) and the "Human audit only" filter
+     (`app.js`), which previously disagreed (`US|OP` vs `US|AD`); Admin-triggered runs now read as manual and
+     Operator actions now pass the human-audit filter. `selectFeedRows` no longer pins **noise-category
+     alerts** (`isAlert && !isNoise`) so a `TW,ER` two-wire flood (90%+ of a real support log) stops burying
+     real events when Advanced is on. Added regression tests: the `Events1000.csv` unpadded/offset-less
+     timestamp variant, `ZN,SR` not opening a run, `ZN,DN`+same-second-`ZN,SP` yielding one clean run,
+     stop-only `PG=99` floods yielding zero runs, noise-alert de-pinning, the search-text cache, and a new
+     `tests/errors.test.js` (ring-buffer cap/truncation/console-tee, with a minimal `window` shim — no jsdom
+     dep). **90 → 102 tests.**
+   - **P2 — performance.** `renderFeed` now **early-returns on an unchanged content signature** (the feed is
+     whole-log, so pan/nav/scrubber re-renders skip the `selectFeedRows` + ≤1500-row `innerHTML` rebuild);
+     `applyFilters` sets `lastFeedSig = null` so a same-length filter swap still rebuilds. `feedSearchText`
+     memoizes its haystack per event and `#feedSearch` is debounced ~150 ms; `selectFeedRows` column sort
+     decorate-sort-undecorates. `visibleRunsAt()` is memoized (`visRunsCache` keyed on `runGen` + lane/type)
+     so scrubber `snapTime`/panel frames reuse one array; the panel's flow carry-forward walks a chronological
+     AC/EX/PR-only `telemetry` subset (built in `applyFilters`) and breaks past the playhead instead of
+     scanning all of `filtered`.
+   - **Verified.** 102 Vitest green, `npm run build` clean. Browser-checked (Chrome DevTools MCP) on
+     `Evnt_flow_test.csv` (renders, scrubber flow panel), `Events1000.csv` (unpadded timestamps parse to
+     6/28→7/2; labels read as words; noise-alerts de-pinned; feed-skip on pan, rebuild on filter), and
+     `Evnt_202606.csv` (73,346 events at scale; human-audit filter → 114 person events) — no console errors.
+     Mirrored in `NOTES.md`, `docs/HOW_TO_USE.md`, and the in-app guide / tooltips. `REPO_ANALYSIS_PLAN.md`
+     documents the full sweep (P3 DRY refactors + P4 structural work intentionally deferred).
+2. **Audit-feed overhaul: whole-log list + search/sort + timeline↔feed jumps, orphan-zone dropdown fix, and
    navigation refinements** (branch `feature/audit-feed-search-jump`). The pieces:
    - **Feed now lists the whole loaded log**, not just the current window (`renderFeed()` drops its range
      param and bases off `filtered`). The stat strip / swimlane / chart stay window-scoped. Because the feed

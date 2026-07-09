@@ -69,8 +69,8 @@ The same walkthrough is available inside the app — click **How to use** in the
 - **Show on timeline** — choose which **Programs**, **Zones**, and **Mainlines** get their own lanes.
   (Zones start empty — pick the ones you care about.)
 - **Run type** — show/hide 🟩 scheduled and 🟧 manual runs; **Alert markers** toggles the 🟥 alarm ticks.
-- **Human audit only** — keep just person-initiated actions (User / Administrator) to separate people
-  from the system.
+- **Human audit only** — keep just person-initiated actions (User / Operator / Programmer /
+  Administrator) to separate people from the system.
 - **SubStation** — isolate a single substation.
 - **Flow Variance |AC−EX| %** — appears when the file has flow telemetry; filter to events whose
   commanded vs. expected flow differ by a chosen range.

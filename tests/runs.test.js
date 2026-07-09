@@ -10,10 +10,16 @@ describe("makeRun", () => {
   it("classifies a plain start/stop as scheduled", () => {
     expect(makeRun("1", 0, 100, { actCode: "SR" }, { actCode: "DN" }).kind).toBe("run-scheduled");
   });
-  it("classifies a manual-run (MR) or User/Operator-triggered start as manual", () => {
+  it("classifies a manual-run (MR) or User/Operator/Programmer/Admin-triggered start as manual", () => {
     expect(makeRun("1", 0, 100, { actCode: "MR" }, null).kind).toBe("run-manual");
     expect(makeRun("1", 0, 100, { actCode: "SR", trgCode: "US" }, null).kind).toBe("run-manual");
     expect(makeRun("1", 0, 100, { actCode: "SR", trgCode: "OP" }, null).kind).toBe("run-manual");
+    expect(makeRun("1", 0, 100, { actCode: "SR", trgCode: "PR" }, null).kind).toBe("run-manual"); // Programmer
+    expect(makeRun("1", 0, 100, { actCode: "SR", trgCode: "AD" }, null).kind).toBe("run-manual"); // Administrator
+  });
+  it("keeps a system/schedule-triggered start scheduled (not a human actor)", () => {
+    expect(makeRun("1", 0, 100, { actCode: "SR", trgCode: "DT" }, null).kind).toBe("run-scheduled");
+    expect(makeRun("1", 0, 100, { actCode: "SR", trgCode: "SY" }, null).kind).toBe("run-scheduled");
   });
   it("classifies a pause/drop stop or explicit terminated flag as terminated", () => {
     expect(makeRun("1", 0, 100, { actCode: "SR" }, { actCode: "PA" }).kind).toBe("run-terminated");
@@ -175,6 +181,43 @@ describe("buildRunIntervals — zone mode (ZN WT → DN)", () => {
     ];
     const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
     expect(runs[0].segments).toBeUndefined();
+  });
+
+  // Data-rule regressions grounded in the real monthly log (Evnt_202606.csv):
+  it("does NOT open a zone run on ZN,SR (SR fires at the same second as the WT that truly starts watering)", () => {
+    // Real log: `ZN,SR` (schedule/queue) precedes/coincides with `ZN,WT`; only WT opens a run.
+    const evs = [
+      parseRow(row("05:00:00", "ZN", "SR", "DT", "PG=1", "ZN=20")),          // queue — must NOT start a run
+      parseRow(row("05:00:01", "ZN", "WT", "SY", "ZN=20", "PG=1")),          // real watering start
+      parseRow(row("05:00:01", "ZN", "SR", "SY", "ZN=20", "PG=1", "ML=1")),  // 2nd SR while open — ignored
+      parseRow(row("06:02:00", "ZN", "DN", "SY", "ZN=20")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);                 // one run, from WT — not two from the SR rows
+    expect(runs[0].start).toBe(ms("05:00:01"));   // WT, not the 05:00:00 SR
+    expect(runs[0].end).toBe(ms("06:02:00"));
+  });
+
+  it("produces exactly one clean run when a DN is immediately followed by a same-second ZN,SP", () => {
+    // Real log: `ZN,DN` closes the run, then a same-second `ZN,SP` (program cascade) has no open run.
+    const evs = [
+      parseRow(row("09:26:00", "ZN", "WT", "SY", "ZN=24", "PG=1")),
+      parseRow(row("09:26:32", "ZN", "DN", "SY", "ZN=24")),
+      parseRow(row("09:26:32", "ZN", "SP", "PG", "ZN=24", "PG=1")), // trails the DN — no phantom run
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].kind).toBe("run-scheduled");
+    expect(runs[0].end).toBe(ms("09:26:32"));
+  });
+
+  it("yields zero runs from a stop-only group (e.g. the 34k PG,SP,PG=99 flood — stops with no start)", () => {
+    const evs = [
+      parseRow(row("00:00:00", "PG", "SP", "PS", "PG=99")),
+      parseRow(row("00:01:00", "PG", "SP", "PS", "PG=99")),
+      parseRow(row("00:02:00", "PG", "SP", "PS", "PG=99")),
+    ];
+    expect(buildRunIntervals(evs, "program", GLOBAL_END)).toHaveLength(0);
   });
 });
 

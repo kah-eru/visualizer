@@ -21,6 +21,18 @@ describe("parseTimestamp", () => {
     expect(parseTimestamp("01/02/2026 00:00:00").getFullYear()).toBe(2026);
   });
 
+  it("parses the Events1000.csv variant: single-digit month/day/hour and no tz offset", () => {
+    // e.g. "6/28/26 3:59:30" — unpadded fields, no trailing -0600. Must yield the right wall-clock.
+    const d = parseTimestamp("6/28/26 3:59:30");
+    expect(d).toBeInstanceOf(Date);
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(5);   // June
+    expect(d.getDate()).toBe(28);
+    expect(d.getHours()).toBe(3);
+    expect(d.getMinutes()).toBe(59);
+    expect(d.getSeconds()).toBe(30);
+  });
+
   it("returns null for empty/invalid input", () => {
     expect(parseTimestamp("")).toBeNull();
     expect(parseTimestamp(null)).toBeNull();

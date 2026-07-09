@@ -1,7 +1,12 @@
 /* ============================ Mapping tables ============================ */
-export const CATEGORY_MAP = {AL:"Alarm",AN:"Pressure Decoder",BM:"BaseManager",CP:"Control Point",ET:"Evapotranspiration",FM:"Flow Meter",FS:"FlowStation",IO:"IOT Server",ML:"Mainline",MR:"Manual Run",MS:"Moisture Sensor",MV:"Master Valve",NM:"Cloud Network Module",NT:"Ethernet",PG:"Program",PM:"Pump",PS:"Pump Station",RG:"Rain Gauge Decoder",SS:"SubStation",SW:"Event Switch",SY:"System",TS:"Temperature Sensor",TW:"Two Wire",WS:"Water Source",ZP:"Primary Zone",ZN:"Zone"};
+export const CATEGORY_MAP = {AL:"Alarm",AN:"Pressure Decoder",AP:"Active Program",BK:"Backup",BM:"BaseManager",CM:"Cloud Network Module",CN:"BaseStation",CP:"Control Point",ED:"Event Day",EM:"Empty Condition",ET:"Evapotranspiration",EZ:"Zone Event Day",FL:"Flash Archive",FM:"Flow Meter",FS:"FlowStation",IO:"IOT Server",MG:"Message",ML:"Mainline",MR:"Manual Run",MS:"Moisture Sensor",MV:"Master Valve",NM:"Cloud Network Module",NT:"Ethernet",NW:"Network Interface",PC:"Control Point",PG:"Program",PM:"Pump",PS:"Pump Station",PZ:"Program Zone",RG:"Rain Gauge Decoder",SB:"SubStation",SS:"SubStation",SW:"Event Switch",SY:"System",TS:"Temperature Sensor",TW:"Two Wire",WS:"Water Source",ZP:"Primary Zone",ZN:"Zone"};
 export const ACTION_MAP = {AD:"ET Adjustment",BK:"Backup",BT:"Boot up",CA:"Clear All",CB:"Calibration",CC:"Configuration Change",CE:"Configuration Error",CL:"Clear",CN:"Connect",DC:"Disconnect",DN:"Done",DR:"Drop",DS:"Disable",DT:"Date/Time",ER:"Error",FV:"Flow Variance",HF:"High Flow",HR:"Hourly Data",LF:"Learn Flow",LP:"Low Pressure",LR:"Learn Flow Results",MR:"Manual Run",OF:"Off",PA:"Pause",RD:"Reading",RS:"Restore",RN:"Run",RL:"Run List",RX:"Receive",SB:"Subtract",SE:"Set",SK:"Skipped",SO:"Soak",SR:"Start",ST:"Status",SP:"Stop",TF:"Traffic",TT:"Transmit",TX:"Text",UD:"Update",VT:"Variance Test",WA:"Wait",WT:"Water"};
 export const TRIGGER_MAP = {AD:"Administrator",BL:"Baseline Commander",BM:"BaseManager",CM:"Cloud Network Module",CP:"Control Point",DL:"Dial",DT:"Date/Time",ED:"Event Date",ET:"Ethernet",FJ:"Flow Jumper",FM:"Flow Meter",FS:"FlowStation",IO:"IOT Server",ML:"Mainline",MS:"Moisture Sensor",MV:"Master Valve",NT:"Network",OP:"Operator",PG:"Program",PJ:"Pause Jumper",PP:"Program Priority",PR:"Programmer",PS:"Pressure Sensor",PZ:"Primary Zone",RA:"Rain Shutdown",RG:"Rain Gauge",RJ:"Rain Jumper",SB:"SubStation",SW:"Event Switch",SY:"System",TE:"Test Engine",TS:"Temperature Sensor",US:"User",WS:"Weather Station",WW:"Water Window",ZN:"Zone"};
+
+// Non-system human actors (Column-D trigger codes): User / Operator / Programmer / Administrator —
+// the four human tiers in the BaseManager protocol spec's event-cause list. Shared by the
+// manual-run classifier (runs.js) and the "Human audit only" filter (app.js) so the two agree.
+export const HUMAN_TRIGGERS = new Set(["US", "OP", "PR", "AD"]);
 
 export const GPM_TO_LPM = 3.785;   // AC / EX
 export const PSI_TO_KPA = 6.894;   // PR
@@ -34,6 +39,7 @@ export const KEY_INFO = {
   // Flow / variance
   AC: { desc: "Actual flow reading (original GPM, shown in L/min)", unit: "L/min" },
   EX: { desc: "Expected flow value (original GPM, shown in L/min)", unit: "L/min" },
+  DF: { desc: "Design flow (GPM, as logged — not converted)", unit: "" },
   FS: { desc: "FlowStation variance status (HI, LO, or OK)", unit: "" },
   LX: { desc: "Low variance enabled (otherwise high variance)", unit: "" },
   SJ: { desc: "Strikes detected (not shutdown)", unit: "" },
@@ -42,7 +48,6 @@ export const KEY_INFO = {
   // Pump / pressure
   IP: { desc: "Address of PumpStation", unit: "" },
   PR: { desc: "Pressure (original PSI, shown in kPa)", unit: "kPa" },
-  SS: { desc: "Drive status", unit: "" },
   PD: { desc: "PID feedback", unit: "" },
   FQ: { desc: "Output frequency", unit: "" },
   AM: { desc: "Output current", unit: "" },
@@ -83,7 +88,7 @@ export const GENERAL_NOTES = {
     "Monthly file named Evnt_yyyyMM.csv, created in the controller's Archive folder; it is always active and cannot be suppressed.",
     "The current month's file is uncompressed. When it reaches 5 MB, the oldest 0.5 MB of records are erased and new records are appended, keeping the file bounded.",
     "At the start of a new month the previous file is compressed to Evnt_yyyyMM.zip.",
-    "Event lines are buffered and flushed to flash at the top of every minute (and before reboots, halts, or crashes)."
+    "Event lines are buffered and flushed to flash at the top of every minute — immediately for Error entries — and before reboots, halts, or crashes."
   ]
 };
 
@@ -97,7 +102,7 @@ export const GENERAL_NOTES = {
    ========================================================================== */
 
 // Current status of a device/program/zone (ST / SS / LT values).
-export const STATUS_MAP = {UK:"Unknown",UA:"Unassigned",DC:"Disconnected",CN:"Connected",CG:"Connecting",DL:"DNS Lookup",OS:"Open Socket",SE:"Security",WS:"Websocket",AU:"Wait Auth",DS:"Disabled",ER:"Error",FB:"Fallback",EM:"Water Empty",FF:"Flow Fault",PF:"Pressure Fault",LF:"Learn Flow",MR:"Manual Run",OB:"Over Budget",OF:"Off",ON:"On",OC:"Over Current",OK:"OK",PA:"Paused",RD:"Rain Delay",RN:"Running",RS:"Rain Switch",SO:"Soaking",SU:"Success",WA:"Waiting",WT:"Watering",DE:"Device Error",VT:"Variance Testing",EV:"Event Day",ST:"Self Test",EE:"Empty Event Switch",EP:"Empty Pressure",FN:"Finished",DN:"Done",NA:"Interface NA",IN:"Initializing",NL:"No Link",DH:"DHCP",RY:"Ready",RU:"Reset Usage",OL:"Offline"};
+export const STATUS_MAP = {UK:"Unknown",UA:"Unassigned",DC:"Disconnected",CN:"Connected",CG:"Connecting",DL:"DNS Lookup",OS:"Open Socket",SE:"Security",WS:"Websocket",AU:"Wait Auth",DS:"Disabled",ER:"Error",FB:"Fallback",EM:"Water Empty",FF:"Flow Fault",FL:"Water Full",PF:"Pressure Fault",LF:"Learn Flow",MR:"Manual Run",OB:"Over Budget",OF:"Off",ON:"On",OC:"Over Current",OK:"OK",PA:"Paused",RD:"Rain Delay",RN:"Running",RS:"Rain Switch",SO:"Soaking",SU:"Success",WA:"Waiting",WT:"Watering",DE:"Device Error",VT:"Variance Testing",EV:"Event Day",ST:"Self Test",EE:"Empty Event Switch",EP:"Empty Pressure",FN:"Finished",DN:"Done",NA:"Interface NA",IN:"Initializing",NL:"No Link",DH:"DHCP",RY:"Ready",RU:"Reset Usage",OL:"Offline"};
 
 // Why a run started / paused / stopped (SC / PC / TC values).
 export const EVENT_CAUSE_MAP = {UK:"No Cause",SY:"System",PD:"Program Done",FW:"Flow Switch",PW:"Pause Switch",RD:"Rain Delay",RW:"Rain Switch",SD:"Shutdown",WA:"System Wait",WW:"Water Window",ED:"Event Date",ST:"Start Time",MS:"Moisture",PS:"Pressure",SW:"Event Switch",TM:"Temperature",RG:"Rain Gauge",ET:"ET",BM:"BaseManager",US:"User",OP:"Operator User",PR:"Programmer User",AD:"Admin User",TE:"Test Engine"};

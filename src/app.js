@@ -16,7 +16,7 @@ import Papa from "papaparse";
 // so it's loaded on demand via dynamic import() in the PDF handler — not in the initial bundle.
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
-  FEED_CAP, KEY_INFO, GENERAL_NOTES,
+  FEED_CAP, KEY_INFO, GENERAL_NOTES, HUMAN_TRIGGERS,
   STATUS_MAP, EVENT_CAUSE_MAP, MESSAGE_CODE_MAP, MESSAGE_CATEGORY_MAP,
   MESSAGE_PRIORITY_MAP, OBJECT_KEY_MAP, STOP_CONDITION_MAP, ZONE_MODE_MAP, DATA_GROUPS,
 } from "./constants.js";
@@ -50,6 +50,8 @@ let dataMinT = 0, dataMaxT = 0; // full data time bounds
 // run-interval cache: built lazily per mode from `filtered`, cleared whenever `filtered` changes.
 let runCache = {};      // { program|zone|mainline -> intervals[] }
 let globalEndCached = 0;// end-of-data marker for still-open ("ongoing") runs
+let runGen = 0;         // bumped on every applyFilters; invalidates the visibleRunsAt() memo
+let telemetry = [];     // chronological subset of `filtered` carrying AC/EX/PR (scrubber flow carry-forward)
 let windowUnit = "day"; // active window unit: second|minute|hour|day|week|month|all|custom
 // which lanes show on the timeline (checklist dropdowns). empty set = group hidden.
 const laneSel = { program: new Set(), zone: new Set(), mainline: new Set() };
@@ -261,7 +263,7 @@ function applyFilters() {
     if (act && e.action !== act) return false;
     if (trg && e.trigger !== trg) return false;
     if (substation) { const sid = e.pairs.SN ? e.pairs.SN.raw : (e.pairs.SB ? e.pairs.SB.raw : null); if (String(sid) !== substation) return false; }
-    if (humanAudit && !(e.trgCode === "US" || e.trgCode === "AD")) return false;
+    if (humanAudit && !HUMAN_TRIGGERS.has(e.trgCode)) return false;
     if (alertsOnly && !e.isAlert) return false;
     if (minFlow > 0) { if (e.flow == null || e.flow < minFlow) return false; }
     if (varActive) { const v = eventVariancePct(e); if (v == null || v < varMin || v > varMax) return false; }
@@ -271,6 +273,10 @@ function applyFilters() {
   // run intervals depend only on `filtered` → recompute their cache key and clear the memo
   runCache = {};
   globalEndCached = filtered.length ? filtered.reduce((m, e) => Math.max(m, e.ts.getTime()), 0) + 1 : dataMaxT + 1;
+  // chronological telemetry-only subset for the scrubber's flow carry-forward (usually hundreds of rows,
+  // vs. scanning all of `filtered` per animation frame). filtered preserves the file's chronological order.
+  telemetry = filtered.filter(e => e.pairs.AC || e.pairs.EX || e.pairs.PR);
+  runGen++; lastFeedSig = null; // filter changed → invalidate the visibleRunsAt() memo and force a feed rebuild
 
   hydroDirty = true; // data/filter changed → chart datasets + minimap density need a full rebuild
   miniDensityDirty = true;
@@ -791,14 +797,21 @@ function scheduleScrubPanel() {
 }
 
 // run intervals for the currently-visible groups (same gating as renderSwimlane), with a group tag
+let visRunsCache = null, visRunsKey = null; // memo for visibleRunsAt (invalidated by runGen + lane/type)
 function visibleRunsAt() {
   const showScheduled = $("showScheduled").checked;
   const showManual = $("showManual").checked;
+  // Called per pointermove (snapTime) and per scrubber-panel frame — memoize the (spread-heavy) build.
+  // Invalidate when the run cache is rebuilt (runGen, bumped in applyFilters) or lane/run-type changes.
+  const key = runGen + "|" + (showScheduled ? 1 : 0) + (showManual ? 1 : 0) + "|" +
+    [...laneSel.program] + "|" + [...laneSel.zone] + "|" + [...laneSel.mainline];
+  if (visRunsCache && visRunsKey === key) return visRunsCache;
   const okType = iv => (iv.manual ? showManual : showScheduled);
   const out = [];
   if (laneSel.mainline.size) for (const iv of runIntervals("mainline")) if (laneSel.mainline.has(iv.key)) out.push({ ...iv, group: "Mainline", color: categoryColor("Mainline " + iv.key) });
   if (laneSel.program.size) for (const iv of runIntervals("program")) if (laneSel.program.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Program", color: categoryColor("Program " + iv.key) });
   if (laneSel.zone.size) for (const iv of runIntervals("zone")) if (laneSel.zone.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Zone", color: zoneColor(iv.key) });
+  visRunsCache = out; visRunsKey = key;
   return out;
 }
 
@@ -860,7 +873,8 @@ function updateScrubPanel() {
   let flowHTML = "";
   if (hasHydro) {
     let ac = null, ex = null, pr = null, at = null;
-    for (const e of filtered) { const et = e.ts.getTime(); if (et < r.start || et > t) continue;
+    // telemetry is the chronological AC/EX/PR-only subset (hundreds of rows), so we can stop once past t.
+    for (const e of telemetry) { const et = e.ts.getTime(); if (et < r.start) continue; if (et > t) break;
       if (e.pairs.AC) { ac = e.pairs.AC.value; at = et; } if (e.pairs.EX) ex = e.pairs.EX.value; if (e.pairs.PR) pr = e.pairs.PR.value; }
     if (ac != null || ex != null || pr != null) {
       const row = (lbl, v, u) => v == null ? "" : `<div class="flex justify-between"><span class="text-slate-400">${lbl}</span><span class="text-slate-200">${v.toFixed(1)} ${u}</span></div>`;
@@ -929,17 +943,14 @@ function feedRowHTML(e, idx) {
 }
 function renderFeed() {
   const host = $("auditFeed");
-  const scroller = host.parentElement; // the .overflow-y-auto container wrapping #auditFeed
   const searching = !!feedQuery;
-  // The feed lists the WHOLE loaded log (not just the current time window); selectFeedRows applies the
-  // search + column sort / alarm-pinning. Pure + unit-tested so this can't silently regress to windowed.
-  const ordered = selectFeedRows(filtered, { query: feedQuery, sortCol: feedSortCol, sortDir: feedSortDir, revealedIds: revealedFeedIds });
-  // The feed no longer changes when the timeline window pans, so keep the user's scroll position across
-  // such re-renders; only jump back to the top when the actual contents change (filter/search/sort/reveal).
+  // Content signature: when the rows are unchanged across pan / nav / scrubber re-renders, the DOM
+  // (including any expanded rows and the scroll position) is already correct — skip the whole rebuild.
+  // applyFilters sets lastFeedSig=null so any filter change forces a rebuild even at equal length.
   const sig = `${feedQuery}${feedSortCol}${feedSortDir}${filtered.length}${revealedFeedIds.size}`;
-  const keepScroll = scroller && sig === lastFeedSig;
-  const prevScroll = keepScroll ? scroller.scrollTop : 0;
+  if (lastFeedSig !== null && sig === lastFeedSig) return; // rows unchanged → skip selectFeedRows + DOM rebuild
   lastFeedSig = sig;
+  const ordered = selectFeedRows(filtered, { query: feedQuery, sortCol: feedSortCol, sortDir: feedSortDir, revealedIds: revealedFeedIds });
   const alertCount = ordered.reduce((n, e) => n + (e.isAlert ? 1 : 0), 0);
   const shown = ordered.slice(0, FEED_CAP);
   // make sure a revealed row survives the cap so the jump can find it
@@ -947,7 +958,6 @@ function renderFeed() {
   host.innerHTML = shown.length
     ? shown.map((e, idx) => feedRowHTML(e, idx)).join("")
     : `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events loaded."}</div>`;
-  if (keepScroll) scroller.scrollTop = prevScroll;
   // One delegated listener (attached once) instead of re-binding every row on each render.
   if (!host._delegated) {
     host._delegated = true;
@@ -1006,7 +1016,13 @@ flowSlider.addEventListener("input", () => {
 flowSlider.addEventListener("change", applyFilters);
 
 // Audit-feed search box — filters across the whole log; feed-only refresh (no chart/swimlane rebuild).
-$("feedSearch").addEventListener("input", e => { feedQuery = e.target.value.trim(); refreshFeed(); });
+// Debounced so a fast typist doesn't re-run the whole-log filter on every keystroke.
+let feedSearchTimer = null;
+$("feedSearch").addEventListener("input", e => {
+  const v = e.target.value.trim();
+  clearTimeout(feedSearchTimer);
+  feedSearchTimer = setTimeout(() => { feedQuery = v; refreshFeed(); }, 150);
+});
 // Clickable column headers cycle asc → desc → off (back to the pinned-alarms default); a new column
 // starts ascending.
 $("feedHead").addEventListener("click", e => {
@@ -1440,7 +1456,7 @@ function buildGuide() {
       `<b>Date / Time Range</b> — limit everything to a From–To window.`,
       `<b>Show on timeline</b> — pick which <b>Programs</b>, <b>Zones</b> and <b>Mainlines</b> get their own lanes (zones start empty — choose the ones you care about).`,
       `<b>Run type</b> — show/hide ${swatch("#22c55e")} scheduled and ${swatch("#f59e0b")} manual runs; <b>Alert markers</b> toggles the ${swatch("#ef4444")} alarm ticks.`,
-      `<b>Human audit only</b> — keep just person-initiated actions (User / Administrator) to separate people from the system.`,
+      `<b>Human audit only</b> — keep just person-initiated actions (User / Operator / Programmer / Administrator) to separate people from the system.`,
       `<b>SubStation</b> — isolate one substation.`,
       `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
       `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,

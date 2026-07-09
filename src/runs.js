@@ -2,13 +2,14 @@
    Pure run-interval pairing (swimlane durations) — no DOM, no shared app state.
    Extracted from app.js so it can be unit-tested directly in Node.
    ========================================================================== */
+import { HUMAN_TRIGGERS } from "./constants.js";
 
 export const RUN_START = new Set(["SR", "RN", "MR"]);
 export const RUN_STOP  = new Set(["SP", "DN", "OF"]);
 
 export function makeRun(key, start, end, startEv, stopEv, terminated, ongoing, inferred) {
   let kind = "run-scheduled";
-  const manual = !!(startEv && (startEv.actCode === "MR" || startEv.trgCode === "US" || startEv.trgCode === "OP"));
+  const manual = !!(startEv && (startEv.actCode === "MR" || HUMAN_TRIGGERS.has(startEv.trgCode)));
   if (terminated || (stopEv && (stopEv.actCode === "PA" || stopEv.actCode === "DR"))) kind = "run-terminated";
   else if (manual) kind = "run-manual";
   const program = startEv ? (startEv.program != null ? startEv.program : startEv.progEff) : null;

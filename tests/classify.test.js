@@ -109,6 +109,12 @@ describe("feedSearchText / feedMatches (audit-feed search across cells)", () => 
     expect(feedMatches(e, "")).toBe(true);
     expect(feedMatches(e, "   ")).toBe(true);
   });
+  it("caches the haystack on the event and reuses it on repeat calls", () => {
+    const ev = row("ZN", "RD", "SY", "ZN=1");
+    const first = feedSearchText(ev);
+    expect(ev._searchText).toBe(first);     // cached on the event
+    expect(feedSearchText(ev)).toBe(first); // same value returned from cache
+  });
 });
 
 describe("feedSortValue", () => {
@@ -172,5 +178,19 @@ describe("selectFeedRows (whole-log feed, not window-limited — mirrors the 6/2
   });
   it("default order pins alarms above the (earlier) chronological rows", () => {
     expect(selectFeedRows(all, {})[0]).toBe(alert629); // alert on 6/29 pinned above the 6/28 row
+  });
+
+  it("does NOT pin a noise-category alert (e.g. TW,ER) — only real alarms pin to the top", () => {
+    // A two-wire error is both isAlert AND isNoise; on real logs there can be thousands of these.
+    const noiseAlert = at("06/27/26 06:00:00", "TW", "ER", "SY", "ER=TW No Response"); // isAlert && isNoise
+    const set = [e628, alert629, noiseAlert];
+    set.forEach((e, i) => { e._id = 100 + i; });
+    const rows = selectFeedRows(set, {});
+    expect(rows[0]).toBe(alert629);            // the real AL/ER alert is pinned on top
+    expect(rows).toContain(noiseAlert);        // the noise-alert still appears...
+    expect(rows[0]).not.toBe(noiseAlert);      // ...but is NOT pinned above the real alarm
+    // noise-alert falls into the chronological (unpinned) tail — before the 6/28 row by time
+    expect(rows.indexOf(noiseAlert)).toBeLessThan(rows.indexOf(e628));
+    expect(rows.indexOf(noiseAlert)).toBeGreaterThan(0);
   });
 });

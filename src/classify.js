@@ -67,8 +67,10 @@ export function subjectSummary(e) {
 // The searchable haystack for one event: every visible "cell" plus the raw line, lowercased, so a
 // single query can match across multiple columns at once (date, action, category, subject, trigger).
 export function feedSearchText(e) {
-  return [e.tsRaw, e.action, e.category, subjectSummary(e).title, e.trigger, e.rawLine]
-    .filter(Boolean).join(" ").toLowerCase();
+  // Cache per event (events are immutable after load) so a keystroke doesn't rebuild the haystack —
+  // including a subjectSummary() call — for every row on large logs.
+  return e._searchText ?? (e._searchText = [e.tsRaw, e.action, e.category, subjectSummary(e).title, e.trigger, e.rawLine]
+    .filter(Boolean).join(" ").toLowerCase());
 }
 
 // True when every whitespace-separated token of `query` appears somewhere in the event's search text
@@ -112,13 +114,21 @@ export function selectFeedRows(events, { query = "", sortCol = null, sortDir = "
   const matched = query ? base.filter(e => feedMatches(e, query)) : base;
   if (sortCol) {
     const dir = sortDir === "desc" ? -1 : 1;
-    return matched.slice().sort((a, b) => {
-      const va = feedSortValue(a, sortCol), vb = feedSortValue(b, sortCol);
-      let c = sortCol === "date" ? va - vb : String(va).localeCompare(String(vb), undefined, { numeric: true });
-      if (!c) c = a.ts.getTime() - b.ts.getTime();
-      return c * dir;
-    });
+    // Precompute each row's sort key once (the subject key calls subjectSummary) instead of recomputing
+    // both sides inside every comparison — decorate, sort, undecorate.
+    return matched
+      .map(e => ({ e, v: feedSortValue(e, sortCol) }))
+      .sort((a, b) => {
+        let c = sortCol === "date" ? a.v - b.v : String(a.v).localeCompare(String(b.v), undefined, { numeric: true });
+        if (!c) c = a.e.ts.getTime() - b.e.ts.getTime();
+        return c * dir;
+      })
+      .map(x => x.e);
   }
-  const byT = (a, b) => a.ts.getTime() - b.ts.getTime(); // default: alarms pinned, then chronological
-  return matched.filter(e => e.isAlert).sort(byT).concat(matched.filter(e => !e.isAlert).sort(byT));
+  // default order: real alarms pinned on top, then chronological. Noise-category alerts (two-wire /
+  // network chatter, e.g. TW,ER — can be thousands of rows) are NOT pinned, so they don't bury real
+  // events when "Advanced" is on; they still appear in-line and keep their timeline ticks/stats.
+  const byT = (a, b) => a.ts.getTime() - b.ts.getTime();
+  const pinned = e => e.isAlert && !e.isNoise;
+  return matched.filter(pinned).sort(byT).concat(matched.filter(e => !pinned(e)).sort(byT));
 }
