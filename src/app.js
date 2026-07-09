@@ -1456,7 +1456,7 @@ function buildGuide() {
       `<b>Date / Time Range</b> — limit everything to a From–To window.`,
       `<b>Show on timeline</b> — pick which <b>Programs</b>, <b>Zones</b> and <b>Mainlines</b> get their own lanes (zones start empty — choose the ones you care about).`,
       `<b>Run type</b> — show/hide ${swatch("#22c55e")} scheduled and ${swatch("#f59e0b")} manual runs; <b>Alert markers</b> toggles the ${swatch("#ef4444")} alarm ticks.`,
-      `<b>Human audit only</b> — keep just person-initiated actions (User / Operator / Programmer / Administrator) to separate people from the system.`,
+      `<b>Human audit only</b> — keep just the events a <i>person</i> triggered (User / Operator / Programmer / Administrator) and hide everything the controller did on its own: a “who touched this?” view. Note this filters the <i>events</i> and Audit Feed, not the run bars — it won't isolate manual runs, because a run's stop event is controller-generated and gets hidden. To see manual runs on the timeline, use <b>Run type → ${swatch("#f59e0b")} Manual</b> instead.`,
       `<b>SubStation</b> — isolate one substation.`,
       `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
       `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,
