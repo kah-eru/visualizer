@@ -1460,7 +1460,7 @@ function buildGuide() {
       `<b>SubStation</b> — isolate one substation.`,
       `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
       `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,
-      `<b>More filters</b> — narrow by Category, Action, Trigger/Actor, or a minimum flow rate. (To focus the timeline on specific zones, use the <b>Zones</b> lane picker under “Show on timeline”.)`,
+      `<b>More filters</b> — narrow by Category, Action, Trigger/Actor, or a minimum flow rate. These slice the <i>Audit Feed</i>; they share the set that draws the timeline, so a single selection can empty it: only <b>Zone / Program / Mainline</b> categories have lanes (others are feed-only), and a run bar needs <i>both</i> its start and its stop event, which usually differ in action and trigger. To shape the timeline instead, use <b>Show on timeline</b> (lanes) and <b>Run type</b>.`,
       `<b>Advanced → low-level system events</b> — off by default; turn on to include substation, network, two-wire and message chatter.`,
       `<b>Reset Filters</b> — back to the default view.`,
     ])) +

@@ -119,20 +119,20 @@
       <details class="border-t border-slate-800 pt-3">
         <summary class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">▸ More filters</summary>
         <div class="space-y-4 mt-2">
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Category</label>
+          <div title="Narrows the events shown in the Audit Feed by category. Only Zone, Program, and Mainline have timeline lanes — pick one of those and its lane stays (the others empty). Any other category (Manual Run, Alarm, Message, System…) has no lane, so it shows in the feed only and the timeline goes blank.">
+            <label class="block text-xs text-slate-400 mb-1 cursor-help">Category</label>
             <select id="categoryFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Categories</option></select>
           </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Action</label>
+          <div title="Filters events by action for the Audit Feed. Selecting a single action can empty the timeline: a run bar needs BOTH its start (Water / Run / Start) and its stop (Done / Off / Stop), and picking just one drops the other end so bars can't be drawn. Best used to slice the feed, not the timeline.">
+            <label class="block text-xs text-slate-400 mb-1 cursor-help">Action</label>
             <select id="actionFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Actions</option></select>
           </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Trigger / Actor</label>
+          <div title="Filters events by who/what triggered them, for the Audit Feed. Selecting one trigger can empty the timeline: a run's start is usually 'by BaseManager' or a person while its stop is 'by System', so filtering to one drops the other end of the pair and the bar can't be drawn.">
+            <label class="block text-xs text-slate-400 mb-1 cursor-help">Trigger / Actor</label>
             <select id="triggerFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Triggers</option></select>
           </div>
-          <div>
-            <label class="block text-xs text-slate-400 mb-1">Min Flow Rate (L/min)</label>
+          <div title="Keeps only events that carry a flow reading (the telemetry rows) at or above this rate — a feed tool for finding high-flow moments. It removes the start/stop markers the timeline bars are built from, so raising it above 0 will thin out or empty the timeline.">
+            <label class="block text-xs text-slate-400 mb-1 cursor-help">Min Flow Rate (L/min)</label>
             <input type="range" id="flowSlider" min="0" max="100" value="0" step="0.1" class="w-full">
             <div class="flex justify-between text-xs text-slate-400 mt-1"><span>0</span><span id="flowValue" class="text-sky-400 font-medium">0</span><span id="flowMax">100</span></div>
           </div>
