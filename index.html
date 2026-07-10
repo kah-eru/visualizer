@@ -35,7 +35,7 @@
     <div class="space-y-5">
       <!-- Date range -->
       <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Date / Time Range</label>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Limit the timeline, chart, and stat strip to a From–To window. Leave blank to use the Window presets / minimap instead. The Activity Audit Feed still lists the whole log.">Date / Time Range</label>
         <div class="space-y-2">
           <div>
             <span class="text-xs text-slate-500">From</span>
@@ -50,36 +50,36 @@
 
       <!-- Timeline display toggles -->
       <div class="border border-slate-800 rounded-md p-3 space-y-2 bg-slate-800/30">
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">Show on timeline</label>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 cursor-help" title="Choose which programs, zones, and mainlines get their own lane on the timeline. Programs and mainlines start on 'All'; zones start empty — pick the ones you care about. This shapes the timeline (unlike 'More filters', which slice the feed).">Show on timeline</label>
         <div class="space-y-1.5 text-sm text-slate-300">
           <div class="ml-dd" data-group="program">
-            <button id="ddProgramBtn" class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Programs: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddProgramBtn" title="Pick which programs get a timeline lane. Click a program's label in the lane to expand it into its zones." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Programs: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddProgramPanel" class="ml-dd-panel hidden">
               <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddProgramList" class="ml-dd-list"></div>
             </div>
           </div>
           <div class="ml-dd" data-group="zone">
-            <button id="ddZoneBtn" class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Zones: <span class="ddSummary text-sky-400">None</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddZoneBtn" title="Pick which zones get their own timeline lane. Zones start empty — choose the ones you want to see." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Zones: <span class="ddSummary text-sky-400">None</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddZonePanel" class="ml-dd-panel hidden">
               <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddZoneList" class="ml-dd-list"></div>
             </div>
           </div>
           <div class="ml-dd" data-group="mainline">
-            <button id="ddMainlineBtn" class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Mainlines: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddMainlineBtn" title="Pick which mainlines get their own timeline lane." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Mainlines: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddMainlinePanel" class="ml-dd-panel hidden">
               <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddMainlineList" class="ml-dd-list"></div>
             </div>
           </div>
         </div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 pt-1">Run type (zones &amp; programs)</label>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 pt-1 cursor-help" title="Show or hide run bars on the timeline by how they started. This is the control that isolates manual runs on the timeline (unlike 'Human audit only', which only filters the feed).">Run type (zones &amp; programs)</label>
         <div class="grid grid-cols-2 gap-1 text-sm text-slate-300">
-          <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="showScheduled" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-emerald-500"> <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#22c55e"></span>Scheduled</label>
-          <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="showManual" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-amber-500"> <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#f59e0b"></span>Manual</label>
+          <label class="flex items-center gap-2 cursor-pointer" title="Show green run bars the program schedule started on its own."><input type="checkbox" id="showScheduled" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-emerald-500"> <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#22c55e"></span>Scheduled</label>
+          <label class="flex items-center gap-2 cursor-pointer" title="Show amber run bars a person started (User / Operator / Programmer / Administrator, or a manual-run action) — each carries an 'M' badge."><input type="checkbox" id="showManual" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-amber-500"> <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#f59e0b"></span>Manual</label>
         </div>
-        <label class="flex items-center gap-2 cursor-pointer pt-1 text-sm text-slate-300"><input type="checkbox" id="showAlertMarks" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-rose-500"> <span class="inline-block w-2 h-2.5 rounded-sm" style="background:#ef4444"></span>Alert markers</label>
+        <label class="flex items-center gap-2 cursor-pointer pt-1 text-sm text-slate-300" title="Show or hide the red alarm/error ticks above the lanes. Click a tick to jump to that event in the Activity Audit Feed."><input type="checkbox" id="showAlertMarks" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-rose-500"> <span class="inline-block w-2 h-2.5 rounded-sm" style="background:#ef4444"></span>Alert markers</label>
       </div>
 
       <!-- Human Audit toggle -->
@@ -185,7 +185,7 @@
         <div class="cursor-help" title="Number of event rows in the current time window, after filters. Change the Window presets or drag the minimap to widen/narrow it."><span id="statTotal" class="text-2xl font-bold text-white">0</span> <span class="text-slate-400 text-xs">events in window</span></div>
         <div class="cursor-help" title="Alarms/errors (category AL or action ER) in the current window. These are pinned to the top of the Activity Audit Feed."><span id="statAlerts" class="text-2xl font-bold text-rose-400">0</span> <span class="text-slate-400 text-xs">active alerts</span></div>
         <div class="cursor-help" title="Program / zone / mainline runs (start→stop pairs) drawn as bars in the timeline for the current window."><span id="statRuns" class="text-2xl font-bold text-emerald-400">0</span> <span class="text-slate-400 text-xs">runs</span></div>
-        <div class="text-xs text-slate-400 ml-auto cursor-help" title="The time range currently shown across the timeline, chart, and feed.">Window: <span id="statWindow" class="text-slate-200 font-medium"></span></div>
+        <div class="text-xs text-slate-400 ml-auto cursor-help" title="The time range currently shown across the timeline, chart, and stat strip. The Activity Audit Feed is separate — it lists the whole log regardless of this window.">Window: <span id="statWindow" class="text-slate-200 font-medium"></span></div>
       </div>
 
       <!-- TOP PANE: Swimlane timeline + Hydraulic overlay -->
@@ -203,12 +203,12 @@
             <button id="navPrev" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 rounded-md transition-colors" title="Previous">◀</button>
             <span id="navLabel" class="text-xs text-slate-400"></span>
             <button id="navNext" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 rounded-md transition-colors" title="Next">▶</button>
-            <button id="zoomOutBtn" class="hidden text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-md transition-colors">Back</button>
+            <button id="zoomOutBtn" title="Undo the last zoom — return to the previous view window." class="hidden text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-md transition-colors">Back</button>
           </div>
         </div>
         <!-- view-window presets -->
         <div class="flex flex-wrap items-center gap-2 mb-2 text-xs" data-html2canvas-ignore="true">
-          <span class="text-slate-400 cursor-help" title="Set how much time the timeline shows at once. Presets centre on the current view; ◀ ▶ or the arrow keys step one window at a time.">Window:</span>
+          <span class="text-slate-400 cursor-help" title="Set how much time the timeline shows at once. Presets centre on the scrubber playhead (or the view centre when the scrubber is off), so zooming keeps that moment in view; ◀ ▶ or the arrow keys step one window at a time.">Window:</span>
           <div id="windowPresets" class="inline-flex rounded-md overflow-hidden border border-slate-700">
             <button data-win="all" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Fit the entire log in one view.">All</button>
             <button data-win="month" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-month window.">Month</button>
@@ -233,7 +233,7 @@
             <div id="miniPlayhead" title="Scrubber position"></div>
           </div>
         </div>
-        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Operator / Programmer / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; click a block to zoom · click a feed event to jump to it · ←/→ to step.</p>
+        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Operator / Programmer / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; click a bar to open its start line in the feed · corner arrows jump to the run's other edge · red ticks jump to the alert · ←/→ to step the window.</p>
 
         <div id="timeWrap" class="relative">
           <div id="playhead"><div id="playheadTime"></div></div>
