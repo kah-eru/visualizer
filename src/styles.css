@@ -107,3 +107,41 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .feed-pinned { background: rgba(239,68,68,0.08); }
 details > summary { cursor:pointer; list-style:none; }
 details > summary::-webkit-details-marker { display:none; }
+
+/* ============================================================================
+   Print → "Save as PDF". Isolate #dashboard, hide all app chrome, and keep the
+   dark theme + colored bars/chart (browsers drop backgrounds when printing).
+   The click handler in app.js sizes #dashboard to the print width and re-renders
+   the chart first, so the swimlane bars line up under an A4-landscape page.
+   ============================================================================ */
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+
+  /* keep the app's slate background instead of white page/cards */
+  html, body { background: #0f172a !important; }
+
+  /* hide everything that isn't the report: sidebar, the main header row, the scrubber
+     drawer, the modals, and anything already tagged as "not in the export" (timeline
+     toggles, window presets, minimap, upload box, Reset, header buttons, Controller ID). */
+  #appRoot > aside,
+  #dashHeader,
+  #scrubPanel,
+  #guideModal,
+  #refModal,
+  [data-html2canvas-ignore="true"] { display: none !important; }
+
+  /* let the dashboard use the full page width */
+  #appRoot { display: block !important; padding: 0 !important; }
+  #appRoot.scrub-open { padding-right: 0 !important; }
+  main { padding: 0 !important; }
+  #dashboard { background: #0f172a !important; }
+
+  /* force colors through: colored run bars, soak stripes, alert ticks, chart, dark cards */
+  #dashboard, #dashboard * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* don't slice a card (stat strip / timeline / feed) across a page boundary */
+  #dashboard > div { break-inside: avoid; }
+}

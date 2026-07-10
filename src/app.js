@@ -1,6 +1,6 @@
 /* ============================================================================
    App core. This is the original single-file dashboard logic, now importing its
-   libraries (Chart.js, PapaParse, html2pdf) and constants instead of relying on
+   libraries (Chart.js, PapaParse) and constants instead of relying on
    CDN globals. The tightly-coupled render / timeline / swimlane / scrubber /
    feed / minimap code is kept together here on purpose — it shares mutable state
    and dozens of cross-calls; splitting it further buys little and risks regressions.
@@ -12,8 +12,8 @@ import {
 } from "chart.js";
 Chart.register(LineController, LineElement, PointElement, LinearScale, Tooltip);
 import Papa from "papaparse";
-// html2pdf (jsPDF + html2canvas + DOMPurify) is heavy and only needed when the user exports a PDF,
-// so it's loaded on demand via dynamic import() in the PDF handler — not in the initial bundle.
+// PDF export uses the browser's native print (window.print() + a `@media print` stylesheet), so there
+// is no heavy PDF/canvas library to load — see the report-export handler near the bottom of this file.
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
   FEED_CAP, KEY_INFO, GENERAL_NOTES, HUMAN_TRIGGERS,
@@ -1466,8 +1466,8 @@ function buildGuide() {
     ])) +
 
     sec("Exporting & reference", li([
-      `<b>Controller ID</b> (top-right) is stamped onto the PDF.`,
-      `<b>Download PDF</b> exports the current dashboard view exactly as shown.`,
+      `<b>Controller ID</b> (top-right) is stamped onto the printed report.`,
+      `<b>Print / Save as PDF</b> opens your browser's print dialog for the current dashboard view — choose <i>Save as PDF</i> as the destination to export a file (or send it to a printer).`,
       `<b>Reference</b> opens the code glossary — what every Category/Action/Trigger, status, cause and message code means.`,
     ]));
 }
@@ -1481,45 +1481,44 @@ $("guideClose").addEventListener("click", closeGuide);
 guideModal.addEventListener("click", e => { if (e.target === guideModal) closeGuide(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !guideModal.classList.contains("hidden")) closeGuide(); });
 
-/* ============================ PDF export (WYSIWYG + Controller ID / timeframe stamp) ============================ */
-$("pdfBtn").addEventListener("click", async () => {
+/* ============================ Report export (native browser print → Save as PDF) ============================ */
+// We hand the dashboard to the browser's own print engine (a `@media print` stylesheet isolates
+// `#dashboard`; see styles.css) instead of rasterizing it with html2canvas — the latter froze the
+// tab on large logs (main-thread bitmap of the whole DOM at 2× scale). Native print is instant, never
+// freezes, prints selectable text, and has no canvas-size ceiling.
+const PRINT_WIDTH_PX = 1024;   // fits the A4-landscape printable width (~1062px @ 96dpi with 8mm margins)
+
+$("pdfBtn").addEventListener("click", () => {
+  if (!allEvents.length) return;   // nothing loaded → nothing to print
   const el = $("dashboard");
-  const btn = $("pdfBtn");
-  const prev = btn.textContent;
-  btn.disabled = true; btn.textContent = "Generating…";
 
-  // html2pdf (jsPDF + html2canvas + DOMPurify) is loaded on demand so it stays out of the initial bundle.
-  let html2pdf;
-  try {
-    ({ default: html2pdf } = await import("html2pdf.js"));
-  } catch (err) {
-    pushError("pdf", err && err.message, err && err.stack, "");
-    btn.disabled = false; btn.textContent = prev;
-    showErrorBanner("Couldn't load the PDF exporter", err);
-    return;
-  }
-
-  // temporary stamp prepended to the captured area
+  // Temporary stamp prepended to the printed area (replaces the on-screen header, which print hides).
   const range = currentRange(), span = range.end - range.start;
   const cid = ($("controllerId").value || "").trim();
   const stamp = document.createElement("div");
+  stamp.className = "pdf-stamp";
   stamp.style.cssText = "padding:6px 4px 12px;margin-bottom:4px;border-bottom:1px solid #334155;color:#e2e8f0;font-size:13px;";
   stamp.innerHTML = `<strong>Baseline Irrigation Report</strong> &nbsp;·&nbsp; Controller: <strong>${escapeHtml(cid || "—")}</strong>` +
     ` &nbsp;·&nbsp; Window: ${escapeHtml(fmtTimeDate(range.start, span))} → ${escapeHtml(fmtTimeDate(range.end, span))}` +
     ` &nbsp;·&nbsp; Generated ${escapeHtml(new Date().toLocaleString())}`;
   el.insertBefore(stamp, el.firstChild);
 
-  const cleanCid = cid ? cid.replace(/[^A-Za-z0-9_-]/g, "") : "report";
-  const opt = {
-    margin: 8,
-    filename: `baseline-${cleanCid}-${new Date().toISOString().slice(0,10)}.pdf`,
-    image: { type: "jpeg", quality: 0.95 },
-    html2canvas: { scale: 2, backgroundColor: "#0f172a", useCORS: true, scrollY: 0 },
-    jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
-    pagebreak: { mode: ["css", "legacy"] }
-  };
-  const done = () => { stamp.remove(); btn.disabled = false; btn.textContent = prev; };
-  html2pdf().set(opt).from(el).save().then(done).catch(done);
+  // Constrain the dashboard to the print width and re-render, so the responsive Chart.js canvas is
+  // regenerated at a width that fits the page and the absolutely-positioned swimlane bars realign to it
+  // (same width-change → hydroDirty → render() path setScrubber uses). Then open the print dialog once
+  // the chart has settled (buildHydroChart/renderSwimlane use rAF retries; animation is off).
+  el.style.width = PRINT_WIDTH_PX + "px";
+  hydroDirty = true; render();
+  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => window.print(), 120)));
+});
+
+// Restore the responsive on-screen layout once the print dialog closes (fires on both save and cancel).
+window.addEventListener("afterprint", () => {
+  const el = $("dashboard");
+  el.style.width = "";
+  const stamp = el.querySelector(".pdf-stamp");
+  if (stamp) stamp.remove();
+  if (allEvents.length) { hydroDirty = true; render(); }
 });
 
 /* ============================ Diagnostics for the feedback report ============================ */

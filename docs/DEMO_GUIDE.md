@@ -103,7 +103,8 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
     human-audit-only, flow variance).
     - **Say:** *"The feed is the entire log — search it, sort it, and jump from any row straight to that
       moment on the timeline."*
-14. **Download PDF** → the whole dashboard exports as shown.
+14. **Print / Save as PDF** → opens the browser print dialog; choose **Save as PDF** to export the whole
+    dashboard as shown (works instantly even on huge logs).
     - **Say:** *"One click to hand a customer or a colleague a shareable audit."*
 
 ---

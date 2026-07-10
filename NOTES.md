@@ -21,8 +21,8 @@ Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — 
 - **`src/app.js`** — the dashboard core (filter → render → swimlane/scrubber/feed/minimap + all event
   wiring + DOM glue). Kept as one module on purpose: the render code is tightly coupled and shares mutable
   state via module-local `let`s. Registers just the Chart.js pieces it uses (not `chart.js/auto`), imports
-  `papaparse`, the pure-logic modules below, and `errors.js`; **lazy-imports** `html2pdf.js` only when the
-  user exports a PDF. Exports `getDiagnostics()` for the feedback report.
+  `papaparse`, the pure-logic modules below, and `errors.js`. PDF export is native `window.print()` (no
+  library). Exports `getDiagnostics()` for the feedback report.
 - **`src/parse.js` / `src/runs.js` / `src/format.js` / `src/classify.js`** — the **pure, DOM-free** data
   logic extracted out of app.js so it can be unit-tested directly in Node (`tests/`): CSV row parsing +
   program inference (`parse`), swimlane run-interval pairing (`runs`), time/duration/window/variance/sort
@@ -82,8 +82,9 @@ below for the user's stated priorities.)
   uses are `Chart.register(...)`ed (not `chart.js/auto`). See §4.
 - **PapaParse 5.4.1** — CSV parsing (`worker:false` because workers are blocked under `file://`).
 - **TailwindCSS v4** — the Vite plugin (`@import "tailwindcss"` in `src/styles.css`), not the CDN.
-- **html2pdf.js 0.10.1** — PDF export. **Lazy-loaded** via dynamic `import()` only when the user exports
-  (it's the heaviest dependency); not in the initial bundle. See §4.
+- **PDF export uses native browser print** — `window.print()` + a `@media print` stylesheet in
+  `src/styles.css` (no PDF/canvas library). This replaced **html2pdf.js** (html2canvas), which froze the
+  tab on large logs by rasterizing the whole DOM at 2× on the main thread. See §4 / §6 (Export).
 
 ### Related context files (read these too)
 - `C:\Users\bmauricio\.claude\projects\C--Users-bmauricio-visualizer\memory\` — auto-memory:
@@ -185,9 +186,9 @@ On top of the render split above, a later pass trimmed the initial load and the 
 - **Slim Chart.js** — `Chart.register(LineController, LineElement, PointElement, LinearScale, Tooltip)`
   (top of `app.js`) instead of `import Chart from "chart.js/auto"`, so only the used controllers/elements
   ship in the initial bundle.
-- **Lazy html2pdf** — `html2pdf.js` (~638 kB) is `await import("html2pdf.js")`-ed **inside the PDF
-  handler**, so it becomes a separate on-demand chunk rather than initial-load weight. Combined with the
-  slim Chart.js, this cut the initial JS from ≈918 kB → ≈219 kB (gzip ≈285 → ≈78 kB).
+- **No PDF library** — export is native `window.print()` (§6 Export), so there is nothing to load for it.
+  (Historically `html2pdf.js` (~638 kB) was lazy-`import()`ed in the PDF handler as a separate chunk; it's
+  now removed entirely.) With the slim Chart.js, the initial JS is ≈244 kB (gzip ≈86 kB).
 - **Minimap density gating** — `miniDensityDirty` flag: `drawMiniDensity()` (the canvas histogram, which
   depends only on `filtered`) repaints **only** when filters change (set in `applyFilters`/`setScrubber`,
   cleared after the draw). View-only moves still run `positionMiniWindow` but skip the histogram repaint.
@@ -386,7 +387,14 @@ index.html
 - **`viewSpan`** (module-level) is used by the chart tick/tooltip time formatting; it's set in
   `buildHydroChart`/`applyHydroView`. `fmtTime(ms, span)` changes format by span (sec → date).
 - **PapaParse `worker:false`** — required for `file://`. Don't "optimize" it to a worker.
-- **PDF export** excludes anything with `data-html2canvas-ignore` (upload box, all controls, minimap).
+- **PDF export = native print.** The `#pdfBtn` handler stamps a header, sizes `#dashboard` to
+  `PRINT_WIDTH_PX` (1024, fits A4 landscape), sets `hydroDirty=true` and `render()`s so the responsive
+  Chart.js canvas + the pixel-positioned swimlane bars regenerate at that width, then calls
+  `window.print()`; `afterprint` clears the width, removes the stamp, and re-renders. The `@media print`
+  block in `styles.css` isolates `#dashboard` (hides `aside`, `#dashHeader`, the drawer/modals, and
+  everything tagged `data-html2canvas-ignore` — that attribute is now the "not in the report" marker) and
+  forces `print-color-adjust:exact` so the dark theme + colored bars survive. The audit feed keeps its
+  540px clip in print (don't unclip — `FEED_CAP` rows would be dozens of pages).
 - **No framework / no state library** — it's direct DOM. Re-render functions rebuild `innerHTML` and
   re-attach listeners each time; keep that pattern.
 - **Run the tests after edits.** `npm run test:run` (CI mode) or `npm test` (watch). Vitest unit-tests
@@ -401,6 +409,10 @@ index.html
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
+- **PDF export → native browser print** — replaced html2pdf.js/html2canvas (which froze the tab on large
+  logs) with `window.print()` + a `@media print` stylesheet. Instant at 73k events (no freeze); removed the
+  `html2pdf.js` dependency. See §4 / §6 / §7 (Export) and the button relabel "Download PDF" →
+  "Print / Save as PDF".
 - **In-app help accuracy pass** (`b558b97`, `c968fea`, `9509a1f`) — audited every tooltip and the
   "How to use" guide against the code. Fixed three stale strings: the swimlane legend said "click a
   block to zoom" (clicking a bar actually jumps to its start line in the feed — see §6 swimlane), the

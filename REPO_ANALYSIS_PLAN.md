@@ -169,7 +169,8 @@ meaningful for UI regressions, not just data logic.
 
 ## Pillar 3 — Efficiency & Performance Bottlenecks
 
-The bundle/interaction work already done (slim Chart.js, lazy html2pdf, minimap gating, rAF
+The bundle/interaction work already done (slim Chart.js, native-print export with no PDF library —
+html2pdf/html2canvas was removed because it froze the tab on large logs — minimap gating, rAF
 throttling, event delegation) is solid. The remaining costs are concentrated in the feed and the
 scrubber hot paths:
 

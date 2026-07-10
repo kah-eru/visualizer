@@ -84,12 +84,39 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
   the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **104 tests**.
   The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
   in a browser.
-- **Performance:** initial index JS ≈245 kB (gzip ≈86 kB); html2pdf (~638 kB) stays lazy-loaded on export.
-- **In-app help was just audited for accuracy** against the code (tooltips + the "How to use" guide);
-  three stale strings were corrected and the untooltipped controls filled in — see the latest session.
+- **Performance:** initial index JS ≈244 kB (gzip ≈86 kB). **PDF export is native browser print** now
+  (`window.print()` + a `@media print` stylesheet) — the html2pdf.js/html2canvas dependency was removed
+  (it froze the tab on large logs), so there's no on-demand export chunk anymore.
+- **In-app help was audited for accuracy** against the code (tooltips + the "How to use" guide);
+  three stale strings were corrected and the untooltipped controls filled in.
 
 ## Last session (most recent first)
 
+1. **PDF export rebuilt on native browser print (fixes the freeze on large logs)** — prompted by a user
+   report that "Download PDF" was "very very slow, often stopping the entire application." Root cause: the
+   export handed the whole `#dashboard` to **html2pdf.js**, which **html2canvas**-rasterized the entire DOM
+   at `scale:2` synchronously on the main thread — a multi-second freeze that could exceed the browser's
+   canvas-size limit (blank/broken result) on big logs. Replaced it with the browser's **native print**:
+   - **`src/app.js`** — the `#pdfBtn` handler now stamps a header, sizes `#dashboard` to `PRINT_WIDTH_PX`
+     (1024, fits A4 landscape), sets `hydroDirty=true` + `render()` so the responsive Chart.js canvas and
+     the pixel-positioned swimlane bars regenerate at a width that fits the page, then calls
+     `window.print()` (after a 2×rAF + 120ms settle). A module-level `afterprint` listener clears the width,
+     removes the stamp, and re-renders to restore the screen layout. The `await import("html2pdf.js")` and
+     the jsPDF/html2canvas options are gone.
+   - **`src/styles.css`** — new `@media print` block: `@page A4 landscape`, isolates `#dashboard` (hides
+     `aside`, `#dashHeader`, the scrubber drawer, the modals, and everything tagged
+     `data-html2canvas-ignore` — now the "not in the report" marker), keeps the dark theme + colored bars
+     via `print-color-adjust:exact`, and `break-inside:avoid` on cards. Feed keeps its 540px clip.
+   - **`index.html`** — added `id="dashHeader"` to the main header row (so print hides it by id), relabeled
+     the button **"Download PDF" → "Print / Save as PDF"** with a new title, retitled `#controllerId`.
+   - **`package.json`** — removed the now-unused `html2pdf.js` dependency (`npm uninstall`, 22 packages
+     gone). Initial JS ≈244 kB; no more on-demand export chunk.
+   - **Verified.** 104 Vitest green, `npm run build` clean. Browser (Chrome DevTools MCP): on
+     `Evnt_flow_test.csv` the print layout renders isolated + dark with colored bars/alert ticks/stamp and
+     no console errors, the handler resizes→renders→`print()` once and `afterprint` restores; on a
+     synthetic **73,000-event** log the whole print flow took **187 ms** (≈67 ms of real work + the 120 ms
+     settle) — no freeze, versus the old multi-second html2canvas hang. Mirrored in `NOTES.md` (§4/§6/§7),
+     `docs/HOW_TO_USE.md`, and the in-app guide.
 1. **In-app help accuracy pass: fix stale tooltips, fill gaps, refresh the guide**
    (`b558b97`, `c968fea`, `9509a1f`). Prompted by a user question — the "Human audit only" toggle and the
    "More filters" **Category → Manual Run** option both *look* like they should surface manual runs on the

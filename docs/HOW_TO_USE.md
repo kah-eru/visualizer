@@ -92,7 +92,10 @@ The same walkthrough is available inside the app — click **How to use** in the
 
 ## Exporting & reference
 
-- **Controller ID** (top-right) is stamped onto the PDF.
-- **Download PDF** exports the current dashboard view exactly as shown on screen.
+- **Controller ID** (top-right) is stamped onto the printed report.
+- **Print / Save as PDF** opens your browser's print dialog for the current dashboard view — pick
+  **Save as PDF** as the destination to export a file (or send it to a printer). This uses the browser's
+  native print engine, so it's instant even on very large logs. The sidebar, controls, and minimap are
+  omitted; a header banner stamps the Controller ID, the visible time window, and the generation time.
 - **Reference** opens the code glossary — what every Category / Action / Trigger, status, cause, and
   message code means.

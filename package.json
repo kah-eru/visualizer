@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "chart.js": "4.4.1",
-    "html2pdf.js": "0.10.1",
     "papaparse": "5.4.1"
   },
   "devDependencies": {
