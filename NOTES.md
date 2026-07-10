@@ -401,12 +401,23 @@ index.html
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
-- **BaseManager protocol-spec cross-check** (uncommitted) — verified the repo against the local-only
+- **In-app help accuracy pass** (`b558b97`, `c968fea`, `9509a1f`) — audited every tooltip and the
+  "How to use" guide against the code. Fixed three stale strings: the swimlane legend said "click a
+  block to zoom" (clicking a bar actually jumps to its start line in the feed — see §6 swimlane), the
+  Window-presets tooltip said presets "centre on the current view" (they centre on the scrubber — §6
+  Filters & windowing), and the stat-strip "Window" tooltip claimed it scopes the feed (the feed is
+  whole-log — §6 Audit feed). Clarified that "Human audit only" and the More-filters Category/Action/
+  Trigger/Min-Flow selects filter the **feed**, not the timeline — a single selection can empty the
+  swimlane (a bar needs both its start and its controller-generated stop; only Zone/Program/Mainline
+  categories have lanes), so the tooltips now point to Show-on-timeline lanes + Run type instead. Added
+  the previously-missing tooltips (Date range, lane dropdowns, Run type, Alert markers, Back). Text/
+  markup only — no logic change; 104 tests green.
+- **BaseManager protocol-spec cross-check** (`ab4a625`) — verified the repo against the local-only
   vendor spec (see §1 Related context files): added `PR` (Programmer) as the fourth `HUMAN_TRIGGERS`
   tier, `FL:"Water Full"` to `STATUS_MAP`, `DF` (design flow) to `KEY_INFO`; gitignored the spec;
   extracted `assembleReport` in `feedback.js` and added `tests/feedback.test.js` pinning the
   "no CSV content in the feedback report" privacy invariant; deleted stale root artifacts.
-- **Repo-analysis P0–P2 fixes** (uncommitted) — privacy gitignore, `CATEGORY_MAP` real-log codes,
+- **Repo-analysis P0–P2 fixes** (`ab4a625`) — privacy gitignore, `CATEGORY_MAP` real-log codes,
   shared `HUMAN_TRIGGERS`, noise-alert de-pinning, feed-rebuild skip + search cache + scrubber memo/
   telemetry subset. Driven by `REPO_ANALYSIS_PLAN.md`; see §4/§6 for the mechanisms.
 - **Audit-feed overhaul** (branch `feature/audit-feed-search-jump`) — whole-log feed + search/sort,

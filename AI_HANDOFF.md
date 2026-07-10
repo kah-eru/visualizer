@@ -76,19 +76,46 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-07-09)
+## Current state (as of 2026-07-10)
 
-- **Version:** 1.0.0. **Branch:** `main`.
+- **Version:** 1.0.0. **Branch:** `main` (in sync with `origin/main`, tip `9509a1f`).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
 - **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
   the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **104 tests**.
   The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
   in a browser.
 - **Performance:** initial index JS ≈245 kB (gzip ≈86 kB); html2pdf (~638 kB) stays lazy-loaded on export.
+- **In-app help was just audited for accuracy** against the code (tooltips + the "How to use" guide);
+  three stale strings were corrected and the untooltipped controls filled in — see the latest session.
 
 ## Last session (most recent first)
 
-1. **BaseManager protocol-spec cross-check + privacy-test gate + P0 cleanup finish** (uncommitted).
+1. **In-app help accuracy pass: fix stale tooltips, fill gaps, refresh the guide**
+   (`b558b97`, `c968fea`, `9509a1f`). Prompted by a user question — the "Human audit only" toggle and the
+   "More filters" **Category → Manual Run** option both *look* like they should surface manual runs on the
+   timeline, but neither does. Audited every `title=` tooltip and the `buildGuide` walkthrough against the
+   actual behavior; text/markup only, no logic — **104 tests stayed green**, build clean, verified in
+   Chrome (DevTools MCP) with all tooltips present and no console errors. The pieces:
+   - **Clarified the feed-vs-timeline distinction** (`b558b97`, `c968fea`). "Human audit only" and the
+     More-filters `Category`/`Action`/`Trigger`/`Min-Flow` selects filter *events* for the **Audit Feed**,
+     but they share the set that draws the timeline — so a single selection can silently **empty the
+     swimlane** (a run bar needs both its start and its controller-generated stop event; only Zone/Program/
+     Mainline categories have lanes). Reworded the Human-audit tooltip + sub-label and added tooltips to all
+     four More-filters controls, each pointing users to **Show on timeline** (lanes) + **Run type → Manual**
+     as the controls that actually shape the timeline. Mirrored in the guide and `docs/HOW_TO_USE.md`.
+   - **Fixed three stale/wrong tooltips** (`9509a1f`), each verified against the code: the swimlane legend
+     said *"click a block to zoom"* — clicking a bar actually jumps to its start line in the feed
+     (`revealRunStart`, `app.js:657`), corner arrows pan to the run's other edge, red ticks jump to the
+     alert; the Window-presets tooltip said presets *"centre on the current view"* — they centre on the
+     **scrubber playhead** (`setWindowUnitCentered`, `app.js:349`); the stat-strip "Window" tooltip claimed
+     the window scopes the feed too — the **feed is whole-log**, independent of the window (`app.js:317`).
+   - **Filled the missing tooltips** the guide promises ("hover almost anything"): Date/Time Range, the
+     Programs/Zones/Mainlines lane dropdowns, Run type + Scheduled/Manual/Alert-markers, and the Back button.
+   - **Refreshed guide step 3** to mention scrubber-centered presets + the minimap's live playhead-mirror
+     marker. `docs/HOW_TO_USE.md` was already accurate on all three points — it was the source of truth the
+     in-app text had drifted from; no doc change needed there.
+1. **BaseManager protocol-spec cross-check + privacy-test gate + P0 cleanup finish** (`ab4a625`;
+   `REPO_ANALYSIS_PLAN.md` as `d5551b5`).
    Verified the previous session's docs/code against `REPO_ANALYSIS_PLAN.md` (all P0–P2 claims held;
    102 tests were green) and cross-checked the whole repo against the vendor's internal
    `Baseline Protocol Specification - BaseManager Opcodes.md` (repo root, now **gitignored — local-only,
@@ -109,7 +136,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
    - `REPO_ANALYSIS_PLAN.md` annotated with outcomes (P0–P2 done; 2.3 `ZN,SP` decided as **no change**;
      P3/P4 deferred) so it can be committed as the record of the sweep.
 1. **Repo-analysis P0–P2 fixes: privacy, category labels, actor-code unification, noise-alert de-pinning,
-   and feed/scrubber performance** (uncommitted). Driven by `REPO_ANALYSIS_PLAN.md`. The pieces:
+   and feed/scrubber performance** (`ab4a625`). Driven by `REPO_ANALYSIS_PLAN.md`. The pieces:
    - **P0 — privacy & labels.** Gitignored `Events1000.csv` (a real support log that was untracked but not
      ignored). Removed a dead duplicate `SS` key in `KEY_INFO`. Extended `CATEGORY_MAP` (`src/constants.js`)
      with the real-log column-B codes it was missing (`PC`=Control Point, `SB`=SubStation, `MG`=Message,
