@@ -97,10 +97,12 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 12. Toggle **Events** → adds the **Interventions & Alerts** lane; click a marker to see the decoded
     "why" (pause / disable / alarm reason).
 13. Scroll to the **Activity Audit Feed** — **every event in the whole log** (not just the window),
-    alarms pinned on top. Click a row to expand its raw detail, or its **↗ timeline** button to drop the
-    scrubber on that moment and flash its bar. **Search** across the whole log and **click a column
-    header** to sort. Show the sidebar **filters** briefly (Programs/Zones/Mainlines, run type,
-    human-audit-only, flow variance).
+    alarms pinned on top. Click a row to expand its raw detail, or its **↗ timeline** button to ride back
+    up to that moment: the page scrolls to the Execution Timeline, the scrubber lands on the event, and its
+    bar keeps an **amber ring** until your next jump (so it's still marked while you talk over it). A good
+    demo beat: search for an alarm, hit **↗ timeline**, and narrate what was running when it fired.
+    **Search** across the whole log and **click a column header** to sort. Show the sidebar **filters**
+    briefly (Programs/Zones/Mainlines, run type, human-audit-only, flow variance).
     - **Say:** *"The feed is the entire log — search it, sort it, and jump from any row straight to that
       moment on the timeline."*
 14. **Print / Save as PDF** → opens the browser print dialog; choose **Save as PDF** to export the whole
@@ -146,8 +148,9 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 - **Flow / pressure chart** (Flow toggle) — actual vs. expected.
 - **Interventions & Alerts lane** (Events toggle) with decoded "why" reasons.
 - **Activity Audit Feed** — the whole log (not just the window), searchable, sortable by any column,
-  alarms pinned, expandable raw rows; each row's **↗ timeline** button drops the scrubber on that moment
-  and flashes its bar. Clicking a timeline **run bar** jumps the feed to that run's start line.
+  alarms pinned, expandable raw rows; each row's **↗ timeline** button scrolls back up to the timeline,
+  drops the scrubber on that moment, and leaves an amber ring on its bar. Clicking a timeline **run bar**
+  jumps the feed to that run's start line.
 - **Rich filters** — date/time range, per-program/zone/mainline lanes, run type, human-audit-only,
   substation, flow-variance %, alerts-only, category/action/trigger.
 - **Reference glossary** — decodes every category / action / trigger / status / cause / message code

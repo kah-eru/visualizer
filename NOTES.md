@@ -308,12 +308,33 @@ index.html
 - **Panel items "locate on timeline"** (`locateOnTimeline`): every row in the panel is clickable. Clicking a
   **Running now** run resolves it to its raw **start** event (`findRunStartEvent` matches group+key+`start` ms
   in `filtered`); clicking an **alert** row uses its `data-eid`. Either way `locateOnTimeline(ts, target, e)`
-  (1) ensures the scrubber is on and drops the playhead exactly on `ts`, (2) sets `pendingBarHighlight`
-  (`{group,key,ts}`) which `renderSwimlane` consumes to `flashBar` every segment of the matching run (amber
-  `.tl-hit` ring), and (3) reveals the raw feed row. Because run start/done rows are normally hidden
-  (`isDurationMarker`), the start event's `_id` is added to **`revealedFeedIds`** (stable `_id` at load) so
-  `renderFeed` force-includes it (and protects it from the `FEED_CAP` slice); off-window events get a
-  `panToTime` first; then the row is scrolled/expanded/flashed via the shared `flashFeedRow`.
+  (1) ensures the scrubber is on and drops the playhead exactly on `ts`, (2) `ensureLaneVisible(target)` ticks
+  the target's lane on if the user had it hidden (zones start as "None", so a zone jump would otherwise have
+  no bar to mark; `visRunsKey` hashes the lane sets, so the `visibleRunsAt` memo self-invalidates),
+  (3) sets `pendingBarHighlight` **and** the sticky `locatedRun` (`{group,key,ts}`), (4) reveals the raw feed
+  row, and (5) **scrolls the page to `#timelineCard`** — without this the whole effect fires off-screen,
+  because the feed sits below the timeline and a jump from it looks like it did nothing. Because run
+  start/done rows are normally hidden (`isDurationMarker`), the start event's `_id` is added to
+  **`revealedFeedIds`** (stable `_id` at load) so `renderFeed` force-includes it (and protects it from the
+  `FEED_CAP` slice); off-window events get a `panToTime` first; then the row is scrolled/expanded/flashed via
+  the shared `flashFeedRow`.
+- **Two marks, two lifetimes** (both applied at the end of `renderSwimlane`, post-`innerHTML`, so they survive
+  its rAF deferral). `pendingBarHighlight` is a **one-shot** arrival pulse (`flashBar` → `.tl-hit`, 1.3s),
+  consumed on the next render. `locatedRun`/`locatedTs` are **sticky**: re-applied on *every* render so the
+  jump target keeps a steady amber ring (`.tl-located`) through pan/zoom/filter changes, until the next jump,
+  a new file (`onDataLoaded`), or Reset Filters clears them. If the located run has **no bar at that instant**
+  — no lane match, or (common) an alarm naming a zone/program that fired *between* that lane's runs — the
+  fallback marks the red alert tick at `locatedTs` (`.alert-located`) instead, so an alert jump always lands
+  on something visible.
+- **Scroll direction is decided per call site**, not by the DOM. `flashFeedRow` uses `scrollFeedTo` (adjusts
+  `#feedScroll.scrollTop` by rect math) rather than `scrollIntoView`, which walks *every* ancestor scroller
+  including the window and would drag the page back down to the feed, fighting the scroll-up above. The
+  timeline→feed direction (`jumpTo` for alert ticks / event markers, `revealRunStart` for bar clicks) calls
+  `scrollPageTo($("feedScroll"), "nearest")` explicitly. Both helpers honour `prefers-reduced-motion`
+  (`behavior:"auto"` instead of `"smooth"`).
+- `.tl-located` is declared **last** in the swimlane CSS block: `.run-soak` (`box-shadow:none`) and
+  `.run-manual-mark` (inset amber border) have equal specificity and would otherwise win and drop the ring;
+  the manual case re-states its inset border alongside the ring.
 - The audit feed's per-row **↗ timeline** button uses the same `locateOnTimeline` (target from the pure
   `eventRunTarget(e)`), but with no feed reveal — the row is already on screen.
 - Opening/closing the drawer changes the chart's available width, so `setScrubber` sets
@@ -409,6 +430,16 @@ index.html
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
+- **Feed → timeline jumps scroll the page + leave a sticky ring** — a demo found that the feed's
+  ↗ timeline button "did nothing": it moved the playhead and pulsed the bar, but never scrolled the window,
+  so the effect fired off-screen above the feed and expired. `locateOnTimeline` now scrolls to
+  `#timelineCard`, ticks a hidden target lane on, and leaves `.tl-located` until the next jump (falling back
+  to the alert tick when the located run has no bar at that instant). Scroll direction is now chosen per
+  call site — see §6 (Scrubber / locate-on-timeline).
+- **Feedback privacy test de-flaked** — its `AC=47` marker collided with the report's own `capturedAt` ISO
+  timestamp during minute :47, so the deploy-gating suite went red ~1 min in 60. Markers are now long/
+  dotted (`AC=4747.47`) and the test freezes the clock on a hostile instant so the case is covered every
+  run. Fixture-only; the invariant is unchanged.
 - **PDF export → native browser print** — replaced html2pdf.js/html2canvas (which froze the tab on large
   logs) with `window.print()` + a `@media print` stylesheet. Instant at 73k events (no freeze); removed the
   `html2pdf.js` dependency. See §4 / §6 / §7 (Export) and the button relabel "Download PDF" →

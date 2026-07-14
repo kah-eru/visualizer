@@ -53,6 +53,8 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .alert-mark { position: absolute; top: 0; width: 0; height: 0; transform: translateX(-50%); cursor: pointer;
   border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 9px solid #ef4444; }
 .alert-mark:hover { border-top-color: #fda4af; }
+/* an event with no run lane marks its tick instead of a bar (same sticky amber as .tl-located) */
+.alert-mark.alert-located { border-top-color: #fbbf24; filter: drop-shadow(0 0 3px #fbbf24); }
 /* interventions & alerts timeline: discrete diamond markers per event */
 .ev-track { position: relative; height: 20px; margin-bottom: 3px; }
 .ev-mark { position: absolute; top: 50%; width: 9px; height: 9px; transform: translate(-50%, -50%) rotate(45deg);
@@ -90,6 +92,11 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .tl-bar.run-manual-mark { box-shadow: inset 0 0 0 2px #f59e0b; }
 .run-manual-badge { position:absolute; right:2px; bottom:1px; z-index:4; pointer-events:none;
   font-size:8px; line-height:1; font-weight:700; color:#1f2937; background:#f59e0b; border-radius:3px; padding:1px 3px; }
+/* Steady amber ring left on the located run after the arrival pulse fades — stays until the next jump.
+   Declared last: .run-soak (box-shadow:none) and .run-manual-mark (inset border) have equal specificity
+   and would otherwise win and drop the ring; the manual case re-states its inset border alongside. */
+.tl-bar.tl-located { box-shadow: 0 0 0 2px #fbbf24; z-index: 5; }
+.tl-bar.run-manual-mark.tl-located { box-shadow: inset 0 0 0 2px #f59e0b, 0 0 0 2px #fbbf24; }
 /* audit feed severity accents */
 .feed-row { cursor:pointer; border-left:3px solid transparent; }
 .feed-row:hover { background:#1e293b; }

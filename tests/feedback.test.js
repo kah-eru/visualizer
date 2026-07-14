@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { parseRow } from "../src/parse.js";
 
 // The project's #1 hard rule: CSV/event-log CONTENTS must never leave the browser. The feedback
@@ -22,10 +22,16 @@ beforeAll(async () => {
 // Synthetic rows shaped like real controller log lines, parsed by the REAL parser so the events
 // carry everything a leak could expose: rawLine, key=value pairs, free-text extras, timestamps.
 // The values are distinctive markers we can grep the serialized report for.
+//
+// The numbers are deliberately long, and the decimals keep their dot: the report legitimately carries
+// ISO timestamps (capturedAt, each error's time) and a viewport, so a SHORT numeric marker matches the
+// report's own digits by coincidence — the original "AC=47" made `not.toContain("47")` fail during minute
+// :47 of every hour, reddening a clean tree (and the deploy gate) ~1 minute in 60. Markers must be
+// implausible as timestamp/viewport substrings; a dot can't appear inside an ISO field either.
 const ROWS = [
-  ["06/17/26 06:07:05 -0600", "ZN", "WT", "DT", "PG=41", "ZN=777", "AC=47"],
+  ["06/17/26 06:07:05 -0600", "ZN", "WT", "DT", "PG=414141", "ZN=777777", "AC=4747.47"],
   ["06/17/26 06:09:00 -0600", "AL", "ER", "SY", "TX=SECRET-VALVE-FAILURE", "Open Circuit Solenoid MARKER-EXTRA"],
-  ["06/17/26 06:10:00 -0600", "MS", "RD", "SY", "SN=SECRETSN99", "VP=12.3"],
+  ["06/17/26 06:10:00 -0600", "MS", "RD", "SY", "SN=SECRETSN99", "VP=1212.31"],
 ];
 
 // Mirrors the shape getDiagnostics() (app.js) returns: filename + counts + filter/view state only.
@@ -43,8 +49,15 @@ function diagnosticsFor(events) {
   };
 }
 
+afterEach(() => { vi.useRealTimers(); });
+
 describe("feedback report privacy invariant", () => {
   it("the serialized report contains no CSV row content — raw lines, pair values, or extras", () => {
+    // Freeze the clock on a deliberately hostile instant — 15:47:47.477, every field packed with the
+    // digits the markers above are built from — so the timestamp-collision case the old fixture tripped
+    // over is covered on EVERY run instead of once an hour. capturedAt and the error's time both use it.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-17T15:47:47.477Z"));
     const events = ROWS.map(parseRow);
     pushError("test", "renderFeed blew up"); // a plausible captured error — no row content in it
     const report = assembleReport({

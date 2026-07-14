@@ -211,8 +211,9 @@ function onDataLoaded() {
     v => /^[A-Za-z]/.test(String(v)) ? v : `SubStation ${v}`);
 
   updateLaneButtons();
-  // fresh log → clear any leftover feed search/sort from a previous file
+  // fresh log → clear any leftover feed search/sort and jump highlight from a previous file
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
+  locatedRun = null; locatedTs = null;
   $("feedHead").classList.remove("hidden"); // sortable column header appears once a log is loaded
 
   // detect hydraulic telemetry → reveal the variance slider only when meaningful
@@ -401,6 +402,10 @@ let feedQuery = "", feedSortCol = null, feedSortDir = "asc";
 let lastFeedSig = null; // content signature of the last feed render, to preserve scroll on view-only moves
 // A run bar to flash on the next swimlane render (set by a "locate on timeline" jump). {group,key,ts}.
 let pendingBarHighlight = null;
+// The last located run + time. Unlike pendingBarHighlight (a one-shot arrival pulse) these are sticky:
+// renderSwimlane re-applies their marks on every render so the jump target stays visible through
+// pan/zoom/filter changes, until the next jump, a new file, or Reset Filters.
+let locatedRun = null, locatedTs = null;
 
 /* ---- Component B: Hydraulic overlay (Chart.js line, provides the shared X scale) ---- */
 // Rebuild the Chart.js instance from the full `filtered` telemetry. Only needed when `filtered` changes
@@ -660,15 +665,30 @@ function renderSwimlane(range, attempt) {
         revealRunStart(findRunStartEvent(bar.getAttribute("data-group"), bar.getAttribute("data-key"), Number(bar.getAttribute("data-runstart")))); }
     });
   }
-  // Flash a run bar requested by a "locate on timeline" jump. Done here (post-innerHTML) so it survives
-  // this function's requestAnimationFrame deferral. Lights up every segment of the matched run.
-  if (pendingBarHighlight) {
-    const { group, key, ts } = pendingBarHighlight;
-    pendingBarHighlight = null;
+  // Mark the run a "locate on timeline" jump pointed at. Done here (post-innerHTML) so it survives this
+  // function's requestAnimationFrame deferral. Both marks light up every segment of the matched run:
+  // `.tl-located` is sticky (re-applied on every render from locatedRun), `.tl-hit` is the one-shot
+  // arrival pulse. A jump with no run lane (a plain system/alarm event) marks its red alert tick instead.
+  const pulse = pendingBarHighlight;
+  pendingBarHighlight = null;
+  let marked = false;
+  if (locatedRun) {
+    const { group, key, ts } = locatedRun;
     const bars = [...lane.querySelectorAll(".tl-bar[data-runstart]")]
       .filter(b => b.dataset.group === group && b.dataset.key === String(key));
     const hit = bars.find(b => Number(b.dataset.start) <= ts && ts < Number(b.dataset.end) + 1);
-    if (hit) for (const b of bars) if (b.dataset.runstart === hit.dataset.runstart) flashBar(b);
+    if (hit) for (const b of bars) if (b.dataset.runstart === hit.dataset.runstart) {
+      b.classList.add("tl-located");
+      if (pulse) flashBar(b);
+      marked = true;
+    }
+  }
+  // Nothing to ring — either the event maps to no lane at all, or (commonly) it's an alarm that names a
+  // zone/program but fired outside any of its runs, so that lane has no bar at this instant. Mark its red
+  // tick instead, so an alert jump always lands on something visible.
+  if (!marked && locatedTs != null) {
+    const tick = lane.querySelector(`.alert-mark[data-tsms="${locatedTs}"]`);
+    if (tick) tick.classList.add("alert-located");
   }
   positionPlayhead();
 }
@@ -733,12 +753,29 @@ function renderEventTimeline(range, attempt) {
   $("eventTlInfo").textContent = total ? `— ${total.toLocaleString()} in view` : "";
 }
 
-// expand a feed row's detail, scroll it into view, and flash it
+// Scroll the PAGE to an element. Kept separate from scrollFeedTo so each jump decides explicitly
+// which way the page moves — feed→timeline scrolls up, timeline→feed scrolls down.
+function scrollPageTo(el, block) {
+  if (!el) return;
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block });
+}
+// Scroll a feed row into view WITHIN the feed's own scroll box. `scrollIntoView` would walk every
+// ancestor scroller (including the window) and fight the page scroll the caller just asked for.
+function scrollFeedTo(row) {
+  const box = $("feedScroll");
+  if (!box) return;
+  const delta = row.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  const top = box.scrollTop + delta - (box.clientHeight - row.offsetHeight) / 2;
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  box.scrollTo({ top, behavior: reduce ? "auto" : "smooth" });
+}
+// expand a feed row's detail, scroll it into view (inside the feed box), and flash it
 function flashFeedRow(row) {
   const host = $("auditFeed");
   const d = host.querySelector(`[data-fdetail="${row.getAttribute("data-idx")}"]`);
   if (d) d.classList.remove("hidden");
-  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  scrollFeedTo(row);
   row.classList.add("feed-flash");
   setTimeout(() => row.classList.remove("feed-flash"), 1400);
 }
@@ -757,6 +794,7 @@ function revealRunStart(e) {
   const r = currentRange();
   if (ts < r.start || ts >= r.end) panToTime(ts); // off-screen → center the view on it (re-renders)
   else render();                                   // in view → rebuild the feed with the revealed row
+  scrollPageTo($("feedScroll"), "nearest");        // bring the feed on-screen if it's below the fold
   const row = $("auditFeed").querySelector(`.feed-row[data-eid="${e._id}"]`);
   if (row) flashFeedRow(row);
 }
@@ -770,19 +808,37 @@ function findRunStartEvent(group, key, startMs) {
 }
 
 // scroll/expand/flash the matching feed row (shared by all marker clicks)
-function jumpTo(ts) { focusFeedEvent(ts); }
+function jumpTo(ts) { scrollPageTo($("feedScroll"), "nearest"); focusFeedEvent(ts); }
+
+// A jump can target a lane the user has hidden (zones start as "None"), which would leave nothing to
+// highlight. Tick that lane on so the run is actually drawn. visRunsKey hashes the lane sets, so the
+// visibleRunsAt memo invalidates itself.
+function ensureLaneVisible(target) {
+  if (!target) return;
+  const g = target.group.toLowerCase(), key = String(target.key);
+  if (!laneAll[g] || !laneAll[g].includes(key) || laneSel[g].has(key)) return;
+  laneSel[g].add(key);
+  const cb = document.querySelector(`#dd${ddCap(g)}List .ddItem[value="${CSS.escape(key)}"]`);
+  if (cb) cb.checked = true;
+  updateLaneButtons();
+}
 
 // "Locate on the timeline": drop the scrubber playhead exactly on `ts`, center the view if it's
-// off-screen, flash the matching run bar (`target = {group,key}` or null), and — when a `feedEvent`
-// is given — reveal + flash its raw feed row too. Shared by the feed ↗ button and the At Playhead panel.
+// off-screen, scroll the page up to the timeline, mark the matching run bar (`target = {group,key}`
+// or null — a plain system/alarm event marks its red tick instead), and — when a `feedEvent` is
+// given — reveal + flash its raw feed row too. Shared by the feed ↗ button and the At Playhead panel.
 function locateOnTimeline(ts, target, feedEvent) {
   if (!playheadOn) setScrubber(true);              // ensure the playhead is visible
   playheadTime = ts;                               // set AFTER setScrubber so it isn't clamped away
+  ensureLaneVisible(target);
   pendingBarHighlight = target ? { group: target.group, key: String(target.key), ts } : null;
+  locatedRun = pendingBarHighlight;                // sticky ring; survives re-render until the next jump
+  locatedTs = ts;
   if (feedEvent && isDurationMarker(feedEvent)) revealedFeedIds.add(feedEvent._id);
   const r = currentRange();
   if (ts < r.start || ts >= r.end) panToTime(ts);  // off-screen → center (re-renders: highlight + playhead apply)
   else render();                                   // in view → re-render so the highlight + playhead apply
+  scrollPageTo($("timelineCard"), "start");        // the whole point: bring the timeline into view
   if (feedEvent) { const row = $("auditFeed").querySelector(`.feed-row[data-eid="${feedEvent._id}"]`); if (row) flashFeedRow(row); }
 }
 
@@ -937,7 +993,7 @@ function feedRowHTML(e, idx) {
       <span class="text-slate-500 text-xs" style="width:72px">${escapeHtml(e.category)}</span>
       <span class="text-sky-200 text-xs" style="flex:1 1 140px;min-width:120px">${subj.html}</span>
       <span class="text-slate-500 text-xs truncate" style="width:96px" title="${escapeHtml(`${e.trgCode || "?"} = ${e.trigger}`)}">by ${escapeHtml(e.trigger)}</span>
-      <button class="feed-jump text-sky-400 hover:text-sky-200 text-xs whitespace-nowrap text-right" style="width:80px" data-tsms="${ts}" title="Jump the timeline to this event (${escapeHtml(fmtTimeDate(ts, 0))})">↗ timeline</button>
+      <button class="feed-jump text-sky-400 hover:text-sky-200 text-xs whitespace-nowrap text-right" style="width:80px" data-tsms="${ts}" title="Scroll up to the timeline at this event (${escapeHtml(fmtTimeDate(ts, 0))}): the scrubber lands on it and its run bar keeps an amber ring until the next jump. Adds the run's lane if it's hidden.">↗ timeline</button>
     </div>
     <div class="hidden px-4 py-3 text-xs leading-relaxed flex flex-wrap" style="background:#0b1220" data-fdetail="${idx}">${detailHTML(e)}</div>`;
 }
@@ -1055,6 +1111,7 @@ $("resetBtn").addEventListener("click", () => {
   zoomStack = []; expandedPrograms.clear();
   // clear the audit-feed search box + column sort back to the pinned-alarms default
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
+  locatedRun = null; locatedTs = null; // drop the sticky "located on timeline" highlight
   // back to the default: the calendar day containing the last event
   windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT, { min: dataMinT, max: dataMaxT });
   applyFilters();
@@ -1441,8 +1498,8 @@ function buildGuide() {
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span — it also shows a small amber marker mirroring the scrubber's position) or the <b>Window</b> presets
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>), which <b>centre on the scrubber</b> so zooming in or out keeps that moment in view. <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
-        <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to move the scrubber right onto it, flash its run bar on the timeline, and open its raw log line in the Activity Audit Feed. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to drop the scrubber on that moment and flash its run bar. The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
+        <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to move the scrubber right onto it, ring its run bar on the timeline, and open its raw log line in the Activity Audit Feed. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to come back up to the timeline at that moment — the page scrolls to the Execution Timeline, the scrubber lands on the event, and its run bar keeps an <b>amber ring</b> until your next jump (if that run's lane was hidden, it's switched on for you; an event with no lane rings its red alert tick instead). The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
     </div>`) +
 
     sec("The panes, top to bottom", li([

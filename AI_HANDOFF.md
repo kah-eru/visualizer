@@ -76,9 +76,9 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-07-10)
+## Current state (as of 2026-07-14)
 
-- **Version:** 1.0.0. **Branch:** `main` (in sync with `origin/main`, tip `9509a1f`).
+- **Version:** 1.0.0. **Branch:** `main` (tip `f9b5d37` + the uncommitted feed→timeline jump work below).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
 - **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
   the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **104 tests**.
@@ -92,6 +92,44 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
+1. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
+   where clicking a feed row's **↗ timeline** "wouldn't scroll me back up" and looked like it did nothing.
+   Root cause: `locateOnTimeline` moved the playhead and pulsed the bar (1.3s `.tl-hit`) but **never scrolled
+   the window** — the feed sits below the timeline, so the whole effect fired off-screen and expired. The
+   pieces:
+   - **`src/app.js`** — `locateOnTimeline` now calls `ensureLaneVisible(target)` (ticks the target's lane on;
+     zones start as "None", so a zone jump had no bar to mark), sets the sticky `locatedRun`/`locatedTs`
+     alongside the one-shot `pendingBarHighlight`, and `scrollPageTo($("timelineCard"), "start")`.
+     `renderSwimlane` re-applies `.tl-located` on every render (survives pan/zoom/filter); when the located
+     run has **no bar at that instant** — commonly an alarm naming a zone that fired *between* its runs — it
+     falls back to marking the red alert tick (`.alert-located`). Cleared on new file + Reset Filters.
+   - **Scroll direction is now explicit per call site.** `flashFeedRow`'s `scrollIntoView` walked every
+     ancestor scroller (including the window) and would fight the new scroll-up, so feed rows scroll inside
+     `#feedScroll` via `scrollFeedTo` (rect math), and the timeline→feed paths (`jumpTo`, `revealRunStart`)
+     call `scrollPageTo(feed, "nearest")` themselves. Both honour `prefers-reduced-motion`.
+   - **`index.html`** — new `id="timelineCard"` (scroll target) + `id="feedScroll"` (feed scroll box);
+     legend + `↗ timeline` tooltip reworded. **`src/styles.css`** — `.tl-located` / `.alert-located`, with
+     `.tl-located` declared **last** so `.run-soak` (`box-shadow:none`) and `.run-manual-mark` (inset border)
+     don't win at equal specificity and drop the ring.
+   - **Verified.** 104 Vitest green (DOM-only change), build clean. Browser (Chrome DevTools MCP): jump from
+     the bottom of the feed scrolls the card to viewport top, auto-adds the hidden zone lane, rings the bar,
+     ring survives Hour-preset + nav re-renders, clears on the next jump / Reset / new file; alarm-with-no-bar
+     rings its tick; bar clicks still scroll *down* to the feed; reduced-motion snaps. On **73,346 events**
+     the jump is **15 ms** of synchronous work with **zero** feed rebuilds (`renderFeed`'s signature
+     early-return holds). Mirrored in `NOTES.md`, `docs/HOW_TO_USE.md`, `docs/DEMO_GUIDE.md`, in-app guide.
+1. **Fixed a time-flake in `tests/feedback.test.js` that could redden the deploy gate** — found while running
+   the suite above at 15:47. The privacy test asserts the serialized report contains no pair value, but its
+   fixture used **`AC=47`** while `assembleReport` stamps `capturedAt: new Date().toISOString()`
+   (`feedback.js:106`; each `errors.js` entry carries an ISO `time` too) — so `not.toContain("47")` failed
+   during **minute :47 of every hour**, i.e. a green tree went red ~1 min in 60 and blocked the Pages deploy
+   (`deploy.yml`: `build needs: test`). The invariant was sound; only the fixture was. Two changes:
+   - **Markers can no longer collide with a timestamp** — `PG=41`/`ZN=777`/`AC=47`/`VP=12.3` →
+     `PG=414141`/`ZN=777777`/`AC=4747.47`/`VP=1212.31`: long, and the decimals keep a dot (a dot can't appear
+     inside an ISO field), matching the existing `SECRETSN99`-style markers.
+   - **The worst case is now deterministic, not 1-in-60** — the test pins the clock with
+     `vi.setSystemTime(new Date("2026-06-17T15:47:47.477Z"))` (every field packed with the markers' digits)
+     and an `afterEach(vi.useRealTimers)`. Verified both ways: under the frozen clock the **old** `AC=47`
+     fixture fails on *every* run (so the guard really bites), and the new one passes. **104 green.**
 1. **PDF export rebuilt on native browser print (fixes the freeze on large logs)** — prompted by a user
    report that "Download PDF" was "very very slow, often stopping the entire application." Root cause: the
    export handed the whole `#dashboard` to **html2pdf.js**, which **html2canvas**-rasterized the entire DOM

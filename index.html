@@ -189,7 +189,7 @@
       </div>
 
       <!-- TOP PANE: Swimlane timeline + Hydraulic overlay -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+      <div id="timelineCard" class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 class="text-sm font-semibold text-slate-200">Execution Timeline</h3>
           <div class="flex items-center gap-2" data-html2canvas-ignore="true">
@@ -233,7 +233,7 @@
             <div id="miniPlayhead" title="Scrubber position"></div>
           </div>
         </div>
-        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Operator / Programmer / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; click a bar to open its start line in the feed · corner arrows jump to the run's other edge · red ticks jump to the alert · ←/→ to step the window.</p>
+        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Operator / Programmer / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; click a bar to open its start line in the feed · corner arrows jump to the run's other edge · red ticks jump to the alert · a feed row's “↗ timeline” comes back here and rings the run in amber · ←/→ to step the window.</p>
 
         <div id="timeWrap" class="relative">
           <div id="playhead"><div id="playheadTime"></div></div>
@@ -276,7 +276,7 @@
           <button class="feed-sort text-left" data-col="trigger" style="width:96px" title="Sort by trigger">Trigger<span class="sort-arrow"></span></button>
           <span style="width:80px"></span>
         </div>
-        <div class="overflow-y-auto" style="max-height:540px;">
+        <div id="feedScroll" class="overflow-y-auto" style="max-height:540px;">
           <div id="auditFeed"></div>
         </div>
       </div>
