@@ -318,9 +318,16 @@ index.html
 ### Interventions & Alerts timeline (`renderEventTimeline`, ≈L1195) — toggle `eventTlOn`, OFF by default
 - Separate card (`#eventTlCard`). Groups events into `EVENT_GROUPS` (≈L1176): Alarms, Pause, Disable,
   Skip/Drop, Config, Status/Set. First matching group wins.
-- Diamond markers per event; tooltip and the scrubber panel use **`whyText(e)`** (≈L1187): the `TX`
-  message plus any `extras` tokens (that's where alarm reasons live), else "by {trigger}".
+- Diamond markers per event, carrying `data-tsms` **and `data-eid`** (several events can share a timestamp,
+  and a located jump has to ring the exact one); tooltip and the scrubber panel use **`whyText(e)`**
+  (≈L1187): the `TX` message plus any `extras` tokens (that's where alarm reasons live), else "by {trigger}".
 - Click a marker → `jumpTo` (scroll/expand/flash the matching feed row).
+- **These five groups are the only place the app draws a pause/disable/skip/config/status event** — the
+  main swimlane has no marker for them at all. That's why the feed routes those rows here (see Audit feed
+  below), and why such a jump switches `eventTlOn` on: it's off by default, and a jump that lands on a
+  hidden marker highlights nothing.
+- `locatedEid` is re-applied as `.ev-located` after every `innerHTML` write, mirroring how `renderSwimlane`
+  re-applies `.tl-located` from `locatedRun`, so a feed jump's ring survives pan/zoom/filter re-renders.
 
 ### Scrubber (`positionPlayhead`/`updateScrubPanel`, ≈L1300/1313) — ON by default
 - Draggable amber playhead over the timeline; optional snap-to-run-edges (`snapTime`, ≈L1285, ~8px tolerance).
@@ -376,8 +383,13 @@ index.html
 - `.tl-located` is declared **last** in the swimlane CSS block: `.run-soak` (`box-shadow:none`) and
   `.run-manual-mark` (inset amber border) have equal specificity and would otherwise win and drop the ring;
   the manual case re-states its inset border alongside the ring.
-- The audit feed's per-row **↗ timeline** button uses the same `locateOnTimeline` (target from the pure
-  `eventRunTarget(e)`), but with no feed reveal — the row is already on screen.
+- The audit feed's per-row **↗** button uses the same `locateOnTimeline` (target from the pure
+  `eventRunTarget(e)`), but with no feed reveal — the row is already on screen. `locateOnTimeline`'s 4th
+  arg `srcEvent` drives the routing: it runs `eventJumpTarget` to pick the scroll target
+  (`#eventTlCard` vs `#timelineCard`), set the sticky `locatedEid`, and switch on whatever draws the mark
+  it's about to make (`eventTlOn`, `#showAlertMarks`) — the same reasoning as `ensureLaneVisible`.
+  An events-routed jump still sets `locatedRun`, so the run an intervention acted on stays ringed on the
+  main card above.
 - Opening/closing the drawer changes the chart's available width, so `setScrubber` sets
   `hydroDirty=true` and re-renders so bars realign to the narrower canvas.
 - `#appRoot.scrub-open { padding-right:300px }` reserves space; `<main>` has `min-w-0` so flex content
@@ -393,6 +405,22 @@ index.html
   applies `FEED_CAP` + DOM. (Extracted so "the feed is the whole log, sortable 6/28→7/2" is covered by
   `npm test`, not eyeballing.)
 - Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
+- **A row's ↗ button exists only when a timeline actually draws that event, and names where it goes** —
+  `eventJumpTarget(e, runCovers)` (pure, `classify.js`) returns `{dest, bar, tick, diamond}` or **null**,
+  and `feedRowHTML` emits an 80px spacer instead of a button when null (keeping the sort header's column
+  alignment, `index.html:277`). It used to render on every row: **72% of rows in `testmanual.csv` / 78% in
+  `Evnt_202606.csv` had nothing to land on** (`ZN,RL` heartbeats ×3302, `MS,RD` readings ×13087 …) and the
+  jump just moved the playhead. Two subtleties:
+  - `eventRunTarget(e) != null` does **not** mean a bar exists — it only says which lane the event *names*.
+    A `ZN,WA` (zone queued, not watering) names a zone with no bar, so `runCovers(group, key, ts)` in
+    `app.js` confirms against real intervals. It's a lane→intervals `Map` **memoized on `runGen`**; safe
+    because `applyFilters` does `runGen++; lastFeedSig = null;` together, so runs can't change without a
+    feed rebuild and the feed's content signature needs no extra term. Only the ≤`FEED_CAP` rendered rows
+    call it (2–9 ms per search keystroke at 73k).
+  - **`isAlert` IS the Alarms group** (same predicate in `parse.js` and `EVENT_GROUPS`), so every alarm is
+    drawn on *both* timelines. Alarms route to **main** (their red ticks live there), which makes
+    `diamond && !isAlert` mean exactly "one of the other five groups" — the ones the main timeline doesn't
+    draw at all. Those route to `#eventTlCard`.
 - **Noise-category alerts are NOT pinned.** `selectFeedRows`'s default order pins `isAlert && !isNoise`, so
   a two-wire / network "error" (`TW,ER` — can be 90%+ of a real support log) still shows in-line with its
   red styling + timeline ticks but no longer buries real events when **Advanced** is on. (The `feed-pinned`

@@ -52,11 +52,18 @@ The same walkthrough is available inside the app — click **How to use** in the
    Toggle **Events** to add a separate **Interventions & Alerts** lane (click any marker for the reason),
    and **Soak** (on by default) to split cycle-and-soak zones into watering vs. soak segments. Scroll to
    the **Activity Audit Feed**, which lists **every event in the whole log** (not just the current window —
-   it stays put as you pan the timeline). Click a row to expand its raw detail, or its **↗ timeline**
-   button (right side) to go back up to that moment: the page scrolls to the **Execution Timeline**, the
-   scrubber lands on the event, and its run bar keeps an **amber ring** until your next jump. If that run's
-   lane was switched off, it's turned on for you; an event with no run bar at that instant (an alarm that
-   fired between runs) rings its red alert tick instead. Use the **search box** to
+   it stays put as you pan the timeline). Click a row to expand its raw detail, or its **↗** button
+   (right side) to go back up to that moment: the scrubber lands on the event and what it points at keeps
+   an **amber ring** until your next jump. If that run's lane was switched off, it's turned on for you; an
+   event with no run bar at that instant (an alarm that fired between runs) rings its red alert tick instead.
+
+   **The ↗ button names where it goes, and only appears when there's something to point at.**
+   **↗ timeline** takes you to the **Execution Timeline** — that's runs (including manual ones) and alarms.
+   **↗ events** takes you to the **Interventions & Alerts** timeline, because that's the only place a
+   pause, disable, skip or config change is drawn; if that timeline is switched off, the jump switches it
+   on for you. Where an intervention also ended a run, both are ringed — scroll up and the run it stopped
+   is marked too. Most raw rows (run-list heartbeats, sensor readings) appear on no timeline at all, so
+   they show **no button** rather than a jump that highlights nothing. Use the **search box** to
    find events across the whole log (date, action, zone, program, keyword — space-separated terms all must
    match) and **click any column header** to sort by it (click again to flip, a third click restores the
    pinned-alarms default). Clicking a **run bar** on the timeline jumps the feed to that run's raw start

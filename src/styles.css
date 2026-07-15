@@ -60,6 +60,9 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 .ev-mark { position: absolute; top: 50%; width: 9px; height: 9px; transform: translate(-50%, -50%) rotate(45deg);
   border-radius: 2px; cursor: pointer; z-index: 3; }
 .ev-mark:hover { outline: 2px solid #e2e8f0; z-index: 5; }
+/* Steady amber ring left on the diamond a feed "↗ events" jump pointed at — stays until the next jump,
+   matching .tl-located / .alert-located. Declared after :hover so it isn't dropped at equal specificity. */
+.ev-mark.ev-located { outline: 2px solid #fbbf24; box-shadow: 0 0 6px #fbbf24; z-index: 6; }
 .feed-flash { animation: rawFlash 1.2s ease-out; }
 /* lane checklist dropdowns */
 .ml-dd { position: relative; }

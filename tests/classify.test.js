@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseRow } from "../src/parse.js";
 import {
   isDurationMarker, feedSeverity, eventGroupOf, whyText, subjectSummary,
-  feedSearchText, feedMatches, feedSortValue, eventRunTarget, selectFeedRows,
+  feedSearchText, feedMatches, feedSortValue, eventRunTarget, selectFeedRows, eventJumpTarget,
 } from "../src/classify.js";
 
 const row = (cat, act, trg, ...rest) => parseRow([`06/17/26 06:00:00 -0600`, cat, act, trg, ...rest]);
@@ -192,5 +192,68 @@ describe("selectFeedRows (whole-log feed, not window-limited — mirrors the 6/2
     // noise-alert falls into the chronological (unpinned) tail — before the 6/28 row by time
     expect(rows.indexOf(noiseAlert)).toBeLessThan(rows.indexOf(e628));
     expect(rows.indexOf(noiseAlert)).toBeGreaterThan(0);
+  });
+});
+
+// A feed row only earns a "↗" button if some timeline actually draws the event. ~72% of real rows draw
+// nowhere (ZN,RL heartbeats, SB,RD readings, MS,RD...), and their button used to move the playhead and
+// highlight nothing. Alarms are drawn on BOTH timelines and belong to the main one; the other five
+// intervention groups are drawn ONLY on the Interventions & Alerts card.
+describe("eventJumpTarget (does the timeline have anything to point at, and which one)", () => {
+  const covers = () => true;   // a run is under the event
+  const noRuns = () => false;  // no run under the event
+
+  it("returns null for a plain system/device row — no lane, no alert, no group", () => {
+    expect(eventJumpTarget(row("SB", "RD", "SY", "SB=4"), covers)).toBe(null);
+    expect(eventJumpTarget(row("MS", "RD", "SY", "SN=99"), covers)).toBe(null);
+  });
+
+  it("returns null when the row NAMES a zone but no run is under it (the ZN,WA queued case)", () => {
+    // ZN,WA names zone 50 while it's waiting to water — eventRunTarget resolves, but there's no bar.
+    const wa = row("ZN", "WA", "SY", "ZN=50", "PG=13");
+    expect(eventRunTarget(wa)).toEqual({ group: "Zone", key: "50" }); // names a lane...
+    expect(eventJumpTarget(wa, noRuns)).toBe(null);                   // ...but nothing to ring
+  });
+
+  it("routes a manual run start to the main timeline and points at its bar", () => {
+    expect(eventJumpTarget(row("ZN", "MR", "SY", "ZN=12", "PG=MR"), covers))
+      .toEqual({ dest: "main", bar: { group: "Zone", key: "12" }, tick: false, diamond: false });
+  });
+
+  it("routes a pause to the events timeline but STILL points at the run it killed", () => {
+    expect(eventJumpTarget(row("ZN", "PA", "SY", "ZN=24", "PG=1"), covers))
+      .toEqual({ dest: "events", bar: { group: "Zone", key: "24" }, tick: false, diamond: true });
+  });
+
+  it("routes a pause with no run under it to the events timeline, with no bar", () => {
+    expect(eventJumpTarget(row("ZN", "PA", "SY", "ZN=24", "PG=1"), noRuns))
+      .toEqual({ dest: "events", bar: null, tick: false, diamond: true });
+  });
+
+  it("routes an alarm to the MAIN timeline even though it is also in the Alarms group", () => {
+    // isAlert and the Alarms group are the same predicate, so an alarm is drawn on both timelines.
+    const err = row("ZN", "ER", "SY", "ZN=1");
+    expect(eventGroupOf(err).label).toBe("Alarms");
+    expect(eventJumpTarget(err, covers))
+      .toEqual({ dest: "main", bar: { group: "Zone", key: "1" }, tick: true, diamond: true });
+  });
+
+  it("keeps an alarm with no run on the main timeline — its red tick is still there", () => {
+    expect(eventJumpTarget(row("AL", "ER", "SY", "TX=Open Circuit"), noRuns))
+      .toEqual({ dest: "main", bar: null, tick: true, diamond: true });
+  });
+
+  it("routes a lane-less intervention (config/status/disable) to the events timeline", () => {
+    expect(eventJumpTarget(row("MG", "SE", "BM", "MG=3"), covers)).toMatchObject({ dest: "events", bar: null });
+    expect(eventJumpTarget(row("SY", "CC", "US"), covers)).toMatchObject({ dest: "events", diamond: true });
+  });
+
+  it("only consults runCovers for the lane the event names, at the event's own time", () => {
+    const seen = [];
+    eventJumpTarget(row("ZN", "MR", "SY", "ZN=12", "PG=MR"), (g, k, ts) => { seen.push([g, k, ts]); return true; });
+    expect(seen).toHaveLength(1);
+    expect(seen[0][0]).toBe("Zone");
+    expect(seen[0][1]).toBe("12");
+    expect(seen[0][2]).toBe(row("ZN", "MR", "SY", "ZN=12").ts.getTime());
   });
 });

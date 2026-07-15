@@ -78,13 +78,13 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Current state (as of 2026-07-15)
 
-- **Version:** 1.0.0. **Branch:** `main` (tip `679a3a0` + the Manual Runs lane work below).
+- **Version:** 1.0.0. **Branch:** `main` (tip `0a13fde` + the feed ↗ routing work below).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
 - **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
-  the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **111 tests**.
+  the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **120 tests**.
   The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
   in a browser.
-- **Performance:** initial index JS ≈244 kB (gzip ≈86 kB). **PDF export is native browser print** now
+- **Performance:** initial index JS ≈249 kB (gzip ≈88 kB). **PDF export is native browser print** now
   (`window.print()` + a `@media print` stylesheet) — the html2pdf.js/html2canvas dependency was removed
   (it froze the tab on large logs), so there's no on-demand export chunk anymore.
 - **In-app help was audited for accuracy** against the code (tooltips + the "How to use" guide);
@@ -92,7 +92,31 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **A run ending exactly under the playhead now lists as "· over"** instead of vanishing. The panel's
+1. **The feed's ↗ button now only appears when a timeline can point at the event, and routes to the right
+   one.** It rendered on every row and always scrolled to `#timelineCard`, but **72% of rows in
+   `testmanual.csv` (12,141/16,824) and 78% in `Evnt_202606.csv` (28,678/36,949) had nothing to land on** —
+   `ZN,RL` heartbeats ×3302, `MS,RD` readings ×13087, `SB,RD` ×1873 — so it moved the playhead and
+   highlighted nothing. Separately, pauses/disables/configs are drawn **only** on the Interventions & Alerts
+   card (934 rows in `testmanual.csv` had a diamond and nothing on main), and there was no feed→events path
+   at all. Now:
+   - `eventJumpTarget(e, runCovers)` (pure, `classify.js`, 9 unit tests) → `{dest, bar, tick, diamond}` or
+     **null**; `feedRowHTML` emits an 80px spacer instead of a button when null. Label names the
+     destination: **↗ timeline** / **↗ events**.
+   - `runCovers` (`app.js`) confirms a bar really exists — `eventRunTarget != null` only says which lane an
+     event *names*, and a `ZN,WA` (queued, not watering) names a zone with no bar. Memoized on `runGen`;
+     safe because `applyFilters` does `runGen++; lastFeedSig = null;` together.
+   - **`isAlert` IS the Alarms group** (identical predicate in `parse.js` and `EVENT_GROUPS`), so alarms are
+     drawn on both timelines and are routed explicitly to **main**; `diamond && !isAlert` is then exactly
+     "one of the other five groups", which route to `#eventTlCard`.
+   - An events-routed jump still rings the run the intervention acted on, and switches on whatever draws
+     the mark (`eventTlOn`, `#showAlertMarks`) — same reasoning as the existing `ensureLaneVisible`.
+     New sticky `locatedEid` + `.ev-located`, re-applied by `renderEventTimeline` like `.tl-located`.
+   - Verified in Chrome on both logs: buttons 100% → **28.9%** of rendered rows (testmanual), a `ZN,DS` row
+     switches the Events card on and rings its diamond, a `ZN,PA` rings **both** its diamond and the run it
+     killed, an alarm goes to main and re-checks Alert markers for you, rings survive pan/zoom and clear on
+     next jump / Reset. 120 tests green, console clean, 2–9 ms per search keystroke at 73k.
+
+2. **A run ending exactly under the playhead now lists as "· over"** instead of vanishing. The panel's
    active filter was `iv.start <= t && t < iv.end`; **Snap is on by default and lands the playhead
    precisely on a run edge**, so parking on a run's end dropped it from the panel while its bar sat right
    under the playhead. The end bound is now inclusive, with `isOver` tagging those rows "· over" and
@@ -103,7 +127,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
    an ended run is listed without inflating the count. Verified in Chrome with synthetic logs covering
    ended / mid-run / ongoing at one instant, plus the composed `ran 4 min · over · stopped early · manual`.
 
-2. **Manual runs got their own timeline lane** — prompted by a live demo where the **At Playhead** panel
+3. **Manual runs got their own timeline lane** — prompted by a live demo where the **At Playhead** panel
    "didn't show all of the things that were happening manually". Not a classifier bug: **manual runs are
    zone runs** (`ZN,MR,SY,ZN=12,PG=MR`) and the Zones dropdown starts **empty** (a deliberate default —
    104 zones in `testmanual.csv`), so `visibleRunsAt` skipped them entirely and the panel listed only
@@ -129,7 +153,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
      the manual zones; Manual checkbox drives both; dedupe holds; `statRuns` matches the screen; a full
      toggle round-trip is 35 ms at 73k; console clean. 111 tests green, build clean.
 
-3. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
+4. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
    where clicking a feed row's **↗ timeline** "wouldn't scroll me back up" and looked like it did nothing.
    Root cause: `locateOnTimeline` moved the playhead and pulsed the bar (1.3s `.tl-hit`) but **never scrolled
    the window** — the feed sits below the timeline, so the whole effect fired off-screen and expired. The

@@ -106,14 +106,19 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 12. Toggle **Events** → adds the **Interventions & Alerts** lane; click a marker to see the decoded
     "why" (pause / disable / alarm reason).
 13. Scroll to the **Activity Audit Feed** — **every event in the whole log** (not just the window),
-    alarms pinned on top. Click a row to expand its raw detail, or its **↗ timeline** button to ride back
-    up to that moment: the page scrolls to the Execution Timeline, the scrubber lands on the event, and its
-    bar keeps an **amber ring** until your next jump (so it's still marked while you talk over it). A good
-    demo beat: search for an alarm, hit **↗ timeline**, and narrate what was running when it fired.
+    alarms pinned on top. Click a row to expand its raw detail, or its **↗** button to ride back up to that
+    moment: the scrubber lands on the event and its marker keeps an **amber ring** until your next jump
+    (so it's still marked while you talk over it). The button **names its destination and only appears when
+    a timeline can actually point at that event** — **↗ timeline** for runs and alarms, **↗ events** for
+    pauses/disables/config changes, which live on the Interventions & Alerts timeline (the jump switches it
+    on for you). Rows that appear on no timeline — run-list heartbeats, sensor readings, the bulk of a raw
+    log — simply have no button.
+    - Two good demo beats: search an **alarm**, hit **↗ timeline**, and narrate what was running when it
+      fired; then search a **pause**, hit **↗ events**, and scroll up — the run it stopped is ringed too.
+    - **Say:** *"Every row that can take you somewhere tells you where it's going — and the ones that
+      can't don't pretend."*
     **Search** across the whole log and **click a column header** to sort. Show the sidebar **filters**
     briefly (Programs/Zones/Mainlines, run type, human-audit-only, flow variance).
-    - **Say:** *"The feed is the entire log — search it, sort it, and jump from any row straight to that
-      moment on the timeline."*
 14. **Print / Save as PDF** → opens the browser print dialog; choose **Save as PDF** to export the whole
     dashboard as shown (works instantly even on huge logs).
     - **Say:** *"One click to hand a customer or a colleague a shareable audit."*
@@ -160,9 +165,10 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 - **Flow / pressure chart** (Flow toggle) — actual vs. expected.
 - **Interventions & Alerts lane** (Events toggle) with decoded "why" reasons.
 - **Activity Audit Feed** — the whole log (not just the window), searchable, sortable by any column,
-  alarms pinned, expandable raw rows; each row's **↗ timeline** button scrolls back up to the timeline,
-  drops the scrubber on that moment, and leaves an amber ring on its bar. Clicking a timeline **run bar**
-  jumps the feed to that run's start line.
+  alarms pinned, expandable raw rows; a row's **↗ timeline** / **↗ events** button scrolls to whichever
+  timeline draws that event, drops the scrubber on that moment, and leaves an amber ring on its marker —
+  and rows no timeline can point at have no button. Clicking a timeline **run bar** jumps the feed to that
+  run's start line.
 - **Rich filters** — date/time range, per-program/zone/mainline lanes, run type, human-audit-only,
   substation, flow-variance %, alerts-only, category/action/trigger.
 - **Reference glossary** — decodes every category / action / trigger / status / cause / message code

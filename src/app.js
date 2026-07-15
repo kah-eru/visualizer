@@ -30,7 +30,7 @@ import {
 } from "./format.js";
 import {
   isDurationMarker, feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
-  eventRunTarget, selectFeedRows,
+  eventRunTarget, selectFeedRows, eventJumpTarget,
 } from "./classify.js";
 
 /* ============================ State ============================ */
@@ -216,7 +216,7 @@ function onDataLoaded() {
   updateLaneButtons();
   // fresh log → clear any leftover feed search/sort and jump highlight from a previous file
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
-  locatedRun = null; locatedTs = null;
+  locatedRun = null; locatedTs = null; locatedEid = null;
   expandedPrograms.clear(); expandedManual = true;
   $("feedHead").classList.remove("hidden"); // sortable column header appears once a log is loaded
 
@@ -413,6 +413,10 @@ let pendingBarHighlight = null;
 // renderSwimlane re-applies their marks on every render so the jump target stays visible through
 // pan/zoom/filter changes, until the next jump, a new file, or Reset Filters.
 let locatedRun = null, locatedTs = null;
+// Same idea for the Interventions & Alerts timeline: the _id of the event whose diamond is ringed, so
+// renderEventTimeline can re-apply the mark on every render. Kept separate from locatedRun because an
+// event can be drawn on both timelines at once (a pause rings its diamond AND the run it killed).
+let locatedEid = null;
 
 /* ---- Component B: Hydraulic overlay (Chart.js line, provides the shared X scale) ---- */
 // Rebuild the Chart.js instance from the full `filtered` telemetry. Only needed when `filtered` changes
@@ -773,7 +777,9 @@ function renderEventTimeline(range, attempt) {
     const marks = list.map(e => {
       const t = e.ts.getTime();
       const title = `${fmtTime(t, span)} — ${e.action} (${e.category}) · by ${e.trigger}\n${whyText(e)}`;
-      return `<div class="ev-mark" data-tsms="${t}" title="${escapeHtml(title)}" style="left:${xOf(t)}px;background:${g.color};"></div>`;
+      // data-eid as well as data-tsms: several events can share a timestamp, and a located jump has to
+      // ring the exact one it came from.
+      return `<div class="ev-mark" data-tsms="${t}" data-eid="${e._id}" title="${escapeHtml(title)}" style="left:${xOf(t)}px;background:${g.color};"></div>`;
     }).join("");
     html += `<div class="ev-track">
       <span style="color:#cbd5e1;${lblBase}" title="${escapeHtml(g.label)} (${list.length})">${swatch(g.color)}${escapeHtml(g.label)}</span>${marks}</div>`;
@@ -782,6 +788,12 @@ function renderEventTimeline(range, attempt) {
 
   // gridlines aligned to the chart's x ticks (match the main timeline)
   lane.innerHTML = gridLinesHTML(xScale, "rgba(226,232,240,0.10)", 1) + html;
+  // Re-apply the sticky ring a feed jump left on this event's diamond, the same way renderSwimlane
+  // re-applies .tl-located — so it survives pan/zoom/filter re-renders until the next jump.
+  if (locatedEid != null) {
+    const m = lane.querySelector(`.ev-mark[data-eid="${locatedEid}"]`);
+    if (m) m.classList.add("ev-located");
+  }
   if (!lane._delegated) {
     lane._delegated = true;
     lane.addEventListener("click", ev => {
@@ -854,6 +866,29 @@ function findRunStartEvent(group, key, startMs) {
 // scroll/expand/flash the matching feed row (shared by all marker clicks)
 function jumpTo(ts) { scrollPageTo($("feedScroll"), "nearest"); focusFeedEvent(ts); }
 
+// "Is a run bar actually drawn for this lane at this instant?" — backs eventJumpTarget, which decides
+// whether a feed row gets a ↗ button at all. eventRunTarget only says which lane an event NAMES: a
+// `ZN,WA` names a zone while it's queued, not watering, so there's no bar to ring. Indexed by lane and
+// memoized on runGen — applyFilters does `runGen++; lastFeedSig = null;` together, so runs can never
+// change without a feed rebuild, and renderFeed's content signature needs no extra term. Independent of
+// laneSel/run-type on purpose: the bar exists whether or not its lane is shown, and ensureLaneVisible
+// switches a hidden lane on when the jump lands.
+let runCoverCache = null, runCoverGen = -1;
+function runCovers(group, key, ts) {
+  if (runCoverGen !== runGen || !runCoverCache) {
+    runCoverCache = new Map();
+    for (const [mode, g] of [["zone", "Zone"], ["program", "Program"], ["mainline", "Mainline"]]) {
+      for (const iv of runIntervals(mode)) {
+        const k = g + "|" + iv.key;
+        (runCoverCache.get(k) || runCoverCache.set(k, []).get(k)).push(iv);
+      }
+    }
+    runCoverGen = runGen;
+  }
+  const list = runCoverCache.get(group + "|" + String(key));
+  return !!list && list.some(iv => iv.start <= ts && ts <= iv.end); // inclusive end, matching the bar
+}
+
 // A jump can target a lane the user has hidden (zones start as "None"), which would leave nothing to
 // highlight. Tick that lane on so the run is actually drawn. visRunsKey hashes the lane sets, so the
 // visibleRunsAt memo invalidates itself.
@@ -868,21 +903,30 @@ function ensureLaneVisible(target) {
 }
 
 // "Locate on the timeline": drop the scrubber playhead exactly on `ts`, center the view if it's
-// off-screen, scroll the page up to the timeline, mark the matching run bar (`target = {group,key}`
-// or null — a plain system/alarm event marks its red tick instead), and — when a `feedEvent` is
-// given — reveal + flash its raw feed row too. Shared by the feed ↗ button and the At Playhead panel.
-function locateOnTimeline(ts, target, feedEvent) {
+// off-screen, scroll the page to whichever timeline draws this event, mark the matching run bar
+// (`target = {group,key}` or null — a plain system/alarm event marks its red tick instead), and — when a
+// `feedEvent` is given — reveal + flash its raw feed row too. Shared by the feed ↗ button and the At
+// Playhead panel. `srcEvent` (optional) is the event being located; it decides the routing below.
+function locateOnTimeline(ts, target, feedEvent, srcEvent) {
+  const jump = srcEvent ? eventJumpTarget(srcEvent, runCovers) : null;
   if (!playheadOn) setScrubber(true);              // ensure the playhead is visible
   playheadTime = ts;                               // set AFTER setScrubber so it isn't clamped away
   ensureLaneVisible(target);
+  // Turn on whatever draws the mark we're about to make, for the same reason ensureLaneVisible exists:
+  // a jump that lands on a hidden marker highlights nothing, which is the bug this all fixes.
+  if (jump && jump.dest === "events" && !eventTlOn) { eventTlOn = true; $("eventTlOn").checked = true; }
+  if (jump && jump.tick && !jump.bar && !$("showAlertMarks").checked) $("showAlertMarks").checked = true;
   pendingBarHighlight = target ? { group: target.group, key: String(target.key), ts } : null;
   locatedRun = pendingBarHighlight;                // sticky ring; survives re-render until the next jump
   locatedTs = ts;
+  locatedEid = jump && jump.diamond ? srcEvent._id : null; // sticky ring on the event-timeline diamond
   if (feedEvent && isDurationMarker(feedEvent)) revealedFeedIds.add(feedEvent._id);
   const r = currentRange();
   if (ts < r.start || ts >= r.end) panToTime(ts);  // off-screen → center (re-renders: highlight + playhead apply)
   else render();                                   // in view → re-render so the highlight + playhead apply
-  scrollPageTo($("timelineCard"), "start");        // the whole point: bring the timeline into view
+  // Land on the timeline this event belongs to. An events-routed jump still rings its run bar (if any)
+  // on the main card above, so scrolling up shows the run the intervention acted on.
+  scrollPageTo(jump && jump.dest === "events" ? $("eventTlCard") : $("timelineCard"), "start");
   if (feedEvent) { const row = $("auditFeed").querySelector(`.feed-row[data-eid="${feedEvent._id}"]`); if (row) flashFeedRow(row); }
 }
 
@@ -1040,28 +1084,50 @@ function updateScrubPanel() {
         const g = run.getAttribute("data-group"), k = run.getAttribute("data-key"), s = Number(run.getAttribute("data-start"));
         const e = findRunStartEvent(g, k, s);
         // move the playhead to the run's start, flash its bar, and reveal its raw feed row
-        locateOnTimeline(e ? e.ts.getTime() : s, { group: g, key: k }, e);
+        locateOnTimeline(e ? e.ts.getTime() : s, { group: g, key: k }, e, e);
         return;
       }
       const a = ev.target.closest(".scrub-alert[data-eid]");
-      if (a) { const e = allEvents[Number(a.getAttribute("data-eid"))]; if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), e); }
+      if (a) { const e = allEvents[Number(a.getAttribute("data-eid"))]; if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), e, e); }
     });
   }
 }
 
 /* ---- Component C: Activity Audit feed (instantaneous events) ---- */
+
+// Spell out where a row's ↗ actually goes and what it will mark there — the button used to promise a
+// timeline jump on every row, including the ~72% that had nothing to land on.
+function jumpTitle(jump, ts) {
+  const when = fmtTimeDate(ts, 0);
+  const marks = [jump.bar && "rings its run bar", jump.tick && "rings its red alert tick",
+    jump.diamond && "rings its marker on the Interventions & Alerts timeline"].filter(Boolean).join(", ");
+  const where = jump.dest === "events"
+    ? "Scroll to the Interventions & Alerts timeline at this event"
+    : "Scroll up to the timeline at this event";
+  const extra = jump.dest === "events" ? " Switches the Events timeline on if it's off." : "";
+  return `${where} (${when}): the scrubber lands on it and it ${marks} until the next jump.${extra}`;
+}
+
 function feedRowHTML(e, idx) {
   const sev = feedSeverity(e);
   const sevCls = sev === "crit" ? "feed-crit" : sev === "warn" ? "feed-warn" : sev === "audit" ? "feed-audit" : "";
   const subj = subjectSummary(e);
   const ts = e.ts.getTime();
+  // Only offer the jump when a timeline actually draws this event, and send it to the one that does:
+  // pauses/disables/configs live only on the Interventions & Alerts card, runs and alarms on the main
+  // timeline. A row with no marker anywhere (a run-list heartbeat, a sensor reading — most of the log)
+  // keeps the 80px column as an empty spacer so it stays lined up with the sort header.
+  const jump = eventJumpTarget(e, runCovers);
+  const jumpHTML = !jump
+    ? `<span style="width:80px"></span>`
+    : `<button class="feed-jump text-sky-400 hover:text-sky-200 text-xs whitespace-nowrap text-right" style="width:80px" data-tsms="${ts}" title="${escapeHtml(jumpTitle(jump, ts))}">↗ ${jump.dest === "events" ? "events" : "timeline"}</button>`;
   return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${idx}" data-eid="${e._id}" data-tsms="${ts}">
       <span class="text-slate-400 text-xs whitespace-nowrap" style="width:130px">${e.tsRaw.replace(/\s*[+-]\d{4}\s*$/, "")}</span>
       <span class="text-slate-200 text-sm" style="width:88px">${escapeHtml(e.action)}</span>
       <span class="text-slate-500 text-xs" style="width:72px">${escapeHtml(e.category)}</span>
       <span class="text-sky-200 text-xs" style="flex:1 1 140px;min-width:120px">${subj.html}</span>
       <span class="text-slate-500 text-xs truncate" style="width:96px" title="${escapeHtml(`${e.trgCode || "?"} = ${e.trigger}`)}">by ${escapeHtml(e.trigger)}</span>
-      <button class="feed-jump text-sky-400 hover:text-sky-200 text-xs whitespace-nowrap text-right" style="width:80px" data-tsms="${ts}" title="Scroll up to the timeline at this event (${escapeHtml(fmtTimeDate(ts, 0))}): the scrubber lands on it and its run bar keeps an amber ring until the next jump. Adds the run's lane if it's hidden.">↗ timeline</button>
+      ${jumpHTML}
     </div>
     <div class="hidden px-4 py-3 text-xs leading-relaxed flex flex-wrap" style="background:#0b1220" data-fdetail="${idx}">${detailHTML(e)}</div>`;
 }
@@ -1091,7 +1157,7 @@ function renderFeed() {
         ev.stopPropagation();
         const jr = jump.closest(".feed-row");
         const e = jr && allEvents[Number(jr.getAttribute("data-eid"))];
-        if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), null);
+        if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), null, e);
         return;
       }
       const row = ev.target.closest(".feed-row");
@@ -1179,7 +1245,7 @@ $("resetBtn").addEventListener("click", () => {
   zoomStack = []; expandedPrograms.clear(); expandedManual = true;
   // clear the audit-feed search box + column sort back to the pinned-alarms default
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
-  locatedRun = null; locatedTs = null; // drop the sticky "located on timeline" highlight
+  locatedRun = null; locatedTs = null; locatedEid = null; // drop the sticky "located on timeline" highlights
   // back to the default: the calendar day containing the last event
   windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT, { min: dataMinT, max: dataMaxT });
   applyFilters();
@@ -1569,7 +1635,8 @@ function buildGuide() {
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
         Each run is tagged with what was true of it there: <b>· manual</b>, <b>· stopped early</b>, <b>· soaking</b>, and <b>· over</b> when the playhead sits on the run's final instant (park on a run's end — <b>Snap</b> takes you exactly there — and it stays listed instead of disappearing).
         <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to move the scrubber right onto it, ring its run bar on the timeline, and open its raw log line in the Activity Audit Feed. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to come back up to the timeline at that moment — the page scrolls to the Execution Timeline, the scrubber lands on the event, and its run bar keeps an <b>amber ring</b> until your next jump (if that run's lane was hidden, it's switched on for you; an event with no lane rings its red alert tick instead). The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
+      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗</b> button to come back up to the timeline at that moment — the scrubber lands on the event and what it points at keeps an <b>amber ring</b> until your next jump (if that run's lane was hidden, it's switched on for you; an event with no lane rings its red alert tick instead).
+        The button names its destination and only appears when there's something to point at: <b>↗ timeline</b> for runs and alarms, <b>↗ events</b> for pauses/disables/config changes — which are drawn only on the <b>Interventions &amp; Alerts</b> timeline, so that jump switches it on for you. Most raw rows (run-list heartbeats, sensor readings) appear on no timeline and get no button rather than a jump that highlights nothing. The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
     </div>`) +
 
     sec("The panes, top to bottom", li([

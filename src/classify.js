@@ -92,6 +92,28 @@ export function eventRunTarget(e) {
   return null;
 }
 
+// Where a feed row's "↗" can actually land, or null when the event is drawn on NEITHER timeline — the
+// feed omits the button rather than offering a jump that highlights nothing (that was ~72% of rows).
+// An event can be marked in up to three places, and they are not exclusive:
+//   bar     — a run bar on the main swimlane. NOTE eventRunTarget only says which lane an event *names*;
+//             a `ZN,WA` (zone queued, not watering) names a zone with no bar at that instant, so the
+//             caller's `runCovers(group, key, ts)` has to confirm a run is actually there.
+//   tick    — the main swimlane's red alert tick.
+//   diamond — an .ev-mark on the Interventions & Alerts timeline.
+// `runCovers` is injected so this module stays pure and DOM-free.
+export function eventJumpTarget(e, runCovers) {
+  const target = eventRunTarget(e);
+  const bar = target && runCovers(target.group, target.key, e.ts.getTime()) ? target : null;
+  const diamond = !!eventGroupOf(e);
+  if (!bar && !e.isAlert && !diamond) return null;
+  // `isAlert` and the Alarms group are the SAME predicate (parse.js / EVENT_GROUPS above), so every alarm
+  // is drawn on BOTH timelines. Alarms belong to the main one (their red ticks live there), which leaves
+  // `diamond && !isAlert` meaning exactly "one of the other five groups" — Pause/Disable/Skip/Config/
+  // Status, none of which the main timeline draws at all.
+  const dest = diamond && !e.isAlert ? "events" : "main";
+  return { dest, bar, tick: !!e.isAlert, diamond };
+}
+
 // Comparable value for sorting a feed row by a column: numeric epoch for "date", else the display string.
 export function feedSortValue(e, col) {
   switch (col) {
