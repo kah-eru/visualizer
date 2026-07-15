@@ -493,6 +493,11 @@ index.html
   DOM render pipeline, so still verify rendering visually in a browser (DevTools MCP) after UI changes.
   CI runs these on every PR (`.github/workflows/ci.yml`) and the Pages deploy is **gated** on them
   passing (`deploy.yml`: `build needs: test`).
+- **Where the coverage actually is — and isn't.** `TESTING_AUDIT.md` (2026-07-15) has the full scorecard.
+  Short version: the pure modules are well covered; **`src/app.js` (~64% of the source) has zero tests**,
+  which is why UI regressions keep landing there. The extraction pattern that made `classify.js` testable
+  is the intended fix — `applyFilters`' predicate, the window/nav math, and the minimap transforms are all
+  pure enough to move out. There's no coverage tooling, so nothing reports this in CI.
 
 ---
 
@@ -571,7 +576,11 @@ index.html
 **Still to do / worth verifying:**
 1. **Tests cover the pure data logic only** (`tests/` via Vitest) — the DOM render pipeline,
    swimlane/scrubber wiring, and PDF export are still verified manually/via DevTools MCP. An
-   integration (jsdom) or E2E (Playwright) layer would close that gap.
+   integration (jsdom) or E2E (Playwright) layer would close that gap. **`TESTING_AUDIT.md` audits this
+   properly** (grade B) and ranks the work: the **P0** is that `getDiagnostics()` (`app.js:1721`) sits
+   *outside* the feedback privacy test — that test mirrors its shape in a hand-written fixture, so a leaky
+   field added to the real function wouldn't be caught. Then: extract + test `app.js`'s pure logic, add
+   golden fixture tests over the sample CSVs already in the repo, add `@vitest/coverage-v8`.
 2. **Large logs** rely on the 1500-row feed cap (`FEED_CAP`) + density binning; not virtualized.
 3. **Polish ideas** (not requested, just candidates): keyboard nav for the scrubber, persist toggle
    state across reloads, export the event/alert timeline data, narrow-screen layout for the drawer.

@@ -55,7 +55,8 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 | `src/constants.js` | Mapping tables, key info, conversion constants. |
 | `src/errors.js` | Global error handlers + ring buffer + fatal banner. |
 | `src/feedback.js` | Feedback/crash-report button + modal → Web3Forms. |
-| `tests/*.test.js` | Vitest unit tests for the four pure modules. |
+| `tests/*.test.js` | Vitest unit tests for the pure modules (+ `errors.js` ring buffer, feedback privacy). |
+| `TESTING_AUDIT.md` | **Read before adding tests** — audit of what's covered, what isn't, and a P0–P3 remediation list. |
 | `.github/workflows/` | `ci.yml` (PRs/branches) and `deploy.yml` (push to main → test-gated build → Pages). |
 
 ---
@@ -78,12 +79,15 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Current state (as of 2026-07-15)
 
-- **Version:** 1.0.0. **Branch:** `main` (tip `0a13fde` + the feed ↗ routing work below).
+- **Version:** 1.0.0. **Branch:** `main` (tip `99c49c6` + the testing audit below).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
 - **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
   the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **120 tests**.
   The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
-  in a browser.
+  in a browser. **`TESTING_AUDIT.md` (2026-07-15) is the full picture**: the pure core is well covered,
+  but `src/app.js` (1,742 lines, ~64% of source, where the recent bug fixes all landed) has **zero** tests,
+  there's no coverage tooling, and the privacy test guards a hand-written *copy* of `getDiagnostics()`
+  rather than the real function. Overall grade **B** — see that file's P0–P3 list before adding tests.
 - **Performance:** initial index JS ≈249 kB (gzip ≈88 kB). **PDF export is native browser print** now
   (`window.print()` + a `@media print` stylesheet) — the html2pdf.js/html2canvas dependency was removed
   (it froze the tab on large logs), so there's no on-demand export chunk anymore.
@@ -92,7 +96,35 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **The feed's ↗ button now only appears when a timeline can point at the event, and routes to the right
+1. **Testing-adequacy audit of the whole repo → `TESTING_AUDIT.md`** (read-only; no source or test files
+   changed, suite untouched at **120 green**). Reviewed every source and test file, both CI workflows, and
+   ran the suite once. **Verdict: grade B — the data pipeline is well tested, the interactive layer isn't.**
+   What the next AI should know:
+   - **`src/app.js` is the hole: 1,742 lines (~64% of all source), zero tests** — and the last five commits
+     are *all* fixes to this file (feed ↗ routing, At-Playhead panel, jump scrolling, PDF freeze).
+     Regressions cluster exactly where there are no tests. A meaningful slice is pure and extractable the
+     way `classify.js` already was: the `applyFilters` predicate (`app.js:265-276`, 8 interacting
+     conditions), window/nav math (`currentRange`, `clampView:1369`, `navShift`, `zoomOut`, `snapTime:973`),
+     minimap transforms (`miniX2T`/`miniT2X:1365-1366`), `visibleRunsAt:945`, `runCovers:877`,
+     `jumpTitle:1100`, `toLocalInput:244`, bar math in `barHTML:496`.
+   - **P0 — the privacy test has a hole at the point real data enters.** `feedback.test.js:38-50` builds its
+     input from a **hand-written fixture** (`diagnosticsFor()`, commented "Mirrors the shape getDiagnostics()
+     returns"); the real `getDiagnostics()` (`app.js:1721`) is exported but **never imported by any test**.
+     Add a leaky field to the real function and the invariant still passes — the repo's #1 rule guards a copy
+     of the thing, not the thing. Fix by extracting the diagnostics-shaping logic into a pure function both
+     `app.js` and the test import (preferred), or at minimum pin `getDiagnostics`' key whitelist the way
+     `feedback.test.js:82-87` pins the report's.
+   - **Other gaps, ranked:** no coverage tooling at all (no `@vitest/coverage-v8`, no thresholds — the
+     `app.js` blind spot is invisible in CI); no DOM/integration/E2E layer; **five real sample CSVs sit in the
+     repo but no test loads any of them** (golden fixture tests pinning event/run/alert counts would be cheap
+     and would protect the whole pipeline on real data); untested branches in `guard()`'s catch path
+     (`errors.js:110-112`) and all of `initFeedback` (~half of `feedback.js`).
+   - **Strengths worth not regressing:** testability-by-architecture (pure modules → 120 fast Node tests with
+     no jsdom dep), real-log regression pins (`runs.test.js:186-221`, `classify.test.js:146-196`), the
+     documented once-per-hour flake fix (`feedback.test.js:27-35`), TZ pinned to UTC, and CI that genuinely
+     gates the deploy.
+
+2. **The feed's ↗ button now only appears when a timeline can point at the event, and routes to the right
    one.** It rendered on every row and always scrolled to `#timelineCard`, but **72% of rows in
    `testmanual.csv` (12,141/16,824) and 78% in `Evnt_202606.csv` (28,678/36,949) had nothing to land on** —
    `ZN,RL` heartbeats ×3302, `MS,RD` readings ×13087, `SB,RD` ×1873 — so it moved the playhead and
@@ -424,7 +456,10 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Known gaps / candidate next work (not requested — just options)
 
-- No integration/E2E layer (jsdom or Playwright) over the DOM render pipeline.
+- **Testing** — see `TESTING_AUDIT.md` for the ranked list with evidence. Headlines: `getDiagnostics` is
+  outside the privacy test (**P0**, small fix); `src/app.js`'s pure logic isn't extracted or tested (**P1**);
+  no golden fixture tests over the sample CSVs already in the repo (**P1**); no coverage tooling (**P2**);
+  no integration/E2E layer (jsdom or Playwright) over the DOM render pipeline (**P2**).
 - Large logs rely on the 1500-row feed cap (`FEED_CAP`) + density binning; the feed isn't virtualized.
 - Polish ideas: keyboard nav for the scrubber, persist toggle state across reloads, export the
   event/alert timeline data, narrow-screen layout for the drawer.
