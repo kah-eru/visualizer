@@ -39,6 +39,12 @@ The same walkthrough is available inside the app — click **How to use** in the
    — to move the scrubber right onto that event, flash its run bar on the timeline, and open its raw log
    line in the Activity Audit Feed (the view pans to it if it’s outside the current window). **Snap** makes
    the playhead jump to run start/stop edges.
+
+   Each run is tagged with what was true of it at that instant: **· manual**, **· stopped early**,
+   **· soaking**, and **· over** when the playhead is sitting on the run’s *final* instant — park on a
+   run’s end (Snap takes you exactly there) and it stays listed, marked as over, rather than vanishing.
+   The **“Running now”** count only counts runs actually in progress, so a run marked *over* doesn’t
+   inflate it.
 5. **Dig into the detail.** Toggle **Flow** to overlay the hydraulic flow/pressure chart. Flow is read
    from **Actual (AC) / Expected (EX)** values the controller logs during zone runs with flow monitoring
    — if a log has none, a **“no flow data”** note appears next to the toggle and the chart says so (for

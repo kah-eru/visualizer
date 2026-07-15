@@ -92,7 +92,18 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Manual runs got their own timeline lane** — prompted by a live demo where the **At Playhead** panel
+1. **A run ending exactly under the playhead now lists as "· over"** instead of vanishing. The panel's
+   active filter was `iv.start <= t && t < iv.end`; **Snap is on by default and lands the playhead
+   precisely on a run edge**, so parking on a run's end dropped it from the panel while its bar sat right
+   under the playhead. The end bound is now inclusive, with `isOver` tagging those rows "· over" and
+   showing "ran {duration}" rather than a nonsensical "10 min into 10 min run". Two traps: an **ongoing**
+   run's `end` is `globalEnd` (a placeholder, not a real ending) so `isOver` excludes `iv.ongoing` — a
+   still-running zone must not read "over" at the end of the log, and it now correctly lists as *running*
+   there, where it used to vanish; and **"Running now (N)"** counts `runningCount` (over runs excluded), so
+   an ended run is listed without inflating the count. Verified in Chrome with synthetic logs covering
+   ended / mid-run / ongoing at one instant, plus the composed `ran 4 min · over · stopped early · manual`.
+
+2. **Manual runs got their own timeline lane** — prompted by a live demo where the **At Playhead** panel
    "didn't show all of the things that were happening manually". Not a classifier bug: **manual runs are
    zone runs** (`ZN,MR,SY,ZN=12,PG=MR`) and the Zones dropdown starts **empty** (a deliberate default —
    104 zones in `testmanual.csv`), so `visibleRunsAt` skipped them entirely and the panel listed only
@@ -118,7 +129,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
      the manual zones; Manual checkbox drives both; dedupe holds; `statRuns` matches the screen; a full
      toggle round-trip is 35 ms at 73k; console clean. 111 tests green, build clean.
 
-2. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
+3. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
    where clicking a feed row's **↗ timeline** "wouldn't scroll me back up" and looked like it did nothing.
    Root cause: `locateOnTimeline` moved the playhead and pulsed the bar (1.3s `.tl-hit`) but **never scrolled
    the window** — the feed sits below the timeline, so the whole effect fired off-screen and expired. The

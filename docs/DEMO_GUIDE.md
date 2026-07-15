@@ -79,7 +79,9 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
    mirrors its position live.
 7. The **"At Playhead"** panel (right side) lists exactly what was running at that instant — programs,
    zones, mainlines, and any active alerts. Anything a person started is tagged **"· manual"**; a run
-   that was also killed early reads **"· stopped early · manual"**.
+   that was also killed early reads **"· stopped early · manual"**. Park the playhead on a run's **end**
+   (Snap takes you exactly there) and it stays listed, marked **"· over"** — so you can step the scrubber
+   across a boundary and narrate the handoff instead of watching a row disappear.
    - Park the playhead inside a **Manual Runs** bar → the panel names the zone someone was hand-watering.
      **Say:** *"You don't have to go looking for manual runs — drop the scrubber anywhere and the panel
      tells you who was doing what."*

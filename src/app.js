@@ -960,26 +960,36 @@ function positionPlayhead() {
 function updateScrubPanel() {
   if (playheadTime == null) return;
   const t = playheadTime, r = currentRange(), span = r.end - r.start;
-  const active = visibleRunsAt().filter(iv => iv.start <= t && t < iv.end)
+  // The end bound is INCLUSIVE so a run whose last instant is exactly under the playhead still lists,
+  // tagged "· over", instead of vanishing. Snap (on by default) lands you precisely on a run edge, so
+  // parking on a run's end used to drop it from the panel while its bar sat right under the playhead.
+  // An ongoing run's `end` is globalEnd — a placeholder, not a real ending — so it is never "over".
+  const isOver = iv => !iv.ongoing && t >= iv.end;
+  const active = visibleRunsAt().filter(iv => iv.start <= t && t <= iv.end)
     .sort((a, b) => a.group.localeCompare(b.group) || numCmp(a.key, b.key));
+  const runningCount = active.filter(iv => !isOver(iv)).length; // an ended run isn't "running now"
   const dot = (c, dim) => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${c};${dim ? "opacity:.45;" : ""}"></span>`;
   let runHTML = active.length
     ? active.map(iv => {
+        const over = isOver(iv);
         // is the playhead inside a soak gap of this run? (then it's mid-cycle, not actively watering)
         const soaking = soakSplit && iv.segments && !!(iv.segments.find(s => s.s <= t && t < s.e) || {}).soak;
         // How it started and how it ended are independent facts, so compose the tags rather than
         // letting one win: a hand-started run killed by an alarm is "· stopped early · manual", and
         // used to read as merely stopped early. (barHTML already composes these on the bar itself.)
         const tags = [], whys = [];
+        if (over) { tags.push(" · over"); whys.push("This run ends exactly here — the playhead is on its last instant. "); }
         if (soaking) { tags.push(" · soaking"); whys.push("Between watering cycles (soaking — valve off). "); }
         if (iv.kind === "run-terminated") { tags.push(" · stopped early"); whys.push("Ended early on a pause/disable/alarm. "); }
         if (iv.manual) { tags.push(" · manual"); whys.push("Started by a person, not the schedule. "); }
         const tag = tags.join(""), tagWhy = whys.join("");
+        // "x into y run" reads wrong once the run is done — state the length it ran instead.
+        const progress = over ? `ran ${fmtDuration(iv.end - iv.start)}` : `${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run`;
         const rowTitle = `${tagWhy}Click to move the scrubber to this run's start, flash its bar, and open it in the audit feed.`;
         return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="${escapeHtml(rowTitle)}">
-        <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
+        <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking || over)}<span class="${over ? "text-slate-400" : "text-slate-200"}">${iv.group} ${escapeHtml(iv.key)}</span>
         <span class="text-slate-500 text-xs ml-auto">${escapeHtml(fmtTime(iv.start, span))}→${iv.ongoing ? "…" : escapeHtml(fmtTime(iv.end, span))}</span></div>
-        <div class="text-[10px] ${soaking ? "text-sky-400" : "text-slate-500"} pl-4 pb-1">${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run${tag}</div></div>`;
+        <div class="text-[10px] ${soaking ? "text-sky-400" : "text-slate-500"} pl-4 pb-1">${progress}${tag}</div></div>`;
       }).join("")
     : `<div class="text-slate-500 text-xs">Nothing running.</div>`;
 
@@ -1018,7 +1028,7 @@ function updateScrubPanel() {
 
   $("scrubBody").innerHTML =
     `<div class="text-lg font-bold text-amber-300">${escapeHtml(fmtTime(t, span))}</div>` +
-    `<div><div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Running now (${active.length})</div>${runHTML}</div>` +
+    `<div><div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Running now (${runningCount})</div>${runHTML}</div>` +
     flowHTML + alertHTML;
 
   const body = $("scrubBody");
@@ -1557,6 +1567,7 @@ function buildGuide() {
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span — it also shows a small amber marker mirroring the scrubber's position) or the <b>Window</b> presets
         (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>), which <b>centre on the scrubber</b> so zooming in or out keeps that moment in view. <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
       ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
+        Each run is tagged with what was true of it there: <b>· manual</b>, <b>· stopped early</b>, <b>· soaking</b>, and <b>· over</b> when the playhead sits on the run's final instant (park on a run's end — <b>Snap</b> takes you exactly there — and it stays listed instead of disappearing).
         <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to move the scrubber right onto it, ring its run bar on the timeline, and open its raw log line in the Activity Audit Feed. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
       ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗ timeline</b> button to come back up to the timeline at that moment — the page scrolls to the Execution Timeline, the scrubber lands on the event, and its run bar keeps an <b>amber ring</b> until your next jump (if that run's lane was hidden, it's switched on for you; an event with no lane rings its red alert tick instead). The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts by it. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
     </div>`) +

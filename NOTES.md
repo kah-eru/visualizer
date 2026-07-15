@@ -334,10 +334,18 @@ index.html
   both selected *and* manual — the panel must list that run once). Without this the panel couldn't answer
   "what was running by hand here?" on a fresh load. The derived envelope is deliberately **not** a panel
   row — it's a timeline affordance, not a run.
-- A run's **tags compose** rather than one winning: `· soaking` / `· stopped early` / `· manual` can all
-  appear, and so can their tooltip sentences. These were a ternary chain, so `run-terminated` shadowed
-  `manual` and a hand-started run killed by an alarm read as merely "stopped early" — the demo bug.
+- A run's **tags compose** rather than one winning: `· over` / `· soaking` / `· stopped early` / `· manual`
+  can all appear, and so can their tooltip sentences. These were a ternary chain, so `run-terminated`
+  shadowed `manual` and a hand-started run killed by an alarm read as merely "stopped early" — the demo bug.
   `barHTML` already composed them (`note` appends `· manual` outside its chain), so only the panel was wrong.
+- The active filter's end bound is **inclusive** (`iv.start <= t && t <= iv.end`), and a run whose end is
+  exactly at the playhead is tagged **`· over`** (`isOver`) with "ran {duration}" instead of "x into y run".
+  Snap is on by default and lands the playhead precisely on a run edge, so parking on a run's end used to
+  drop it from the panel while its bar sat directly under the playhead. Two things this must not break:
+  an **ongoing** run's `end` is `globalEnd` — a placeholder, not a real ending — so `isOver` excludes
+  `iv.ongoing` (otherwise a still-running zone reads "over" at the end of the log; it now correctly lists
+  as running there, where it used to vanish); and the **"Running now (N)"** count uses `runningCount`,
+  which excludes over runs, so an ended run is listed without inflating the count.
 - **Panel items "locate on timeline"** (`locateOnTimeline`): every row in the panel is clickable. Clicking a
   **Running now** run resolves it to its raw **start** event (`findRunStartEvent` matches group+key+`start` ms
   in `filtered`); clicking an **alert** row uses its `data-eid`. Either way `locateOnTimeline(ts, target, e)`
