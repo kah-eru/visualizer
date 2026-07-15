@@ -22,11 +22,29 @@ Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — 
   wiring + DOM glue). Kept as one module on purpose: the render code is tightly coupled and shares mutable
   state via module-local `let`s. Registers just the Chart.js pieces it uses (not `chart.js/auto`), imports
   `papaparse`, the pure-logic modules below, and `errors.js`. PDF export is native `window.print()` (no
-  library). Exports `getDiagnostics()` for the feedback report.
-- **`src/parse.js` / `src/runs.js` / `src/format.js` / `src/classify.js`** — the **pure, DOM-free** data
-  logic extracted out of app.js so it can be unit-tested directly in Node (`tests/`): CSV row parsing +
-  program inference (`parse`), swimlane run-interval pairing (`runs`), time/duration/window/variance/sort
-  helpers (`format`), and event severity/grouping/subject classification (`classify`). app.js imports them.
+  library). Exports `getDiagnostics()` for the feedback report — which now only **reads the DOM** and hands
+  off to `diagnostics.js` (see below).
+- **`src/parse.js` / `src/runs.js` / `src/format.js` / `src/classify.js` / `src/view.js` /
+  `src/diagnostics.js`** — the **pure, DOM-free** data logic extracted out of app.js so it can be
+  unit-tested directly in Node (`tests/`): CSV row parsing + program inference + `eventsFromRows` (`parse`),
+  swimlane run-interval pairing (`runs`), time/duration/window/variance/sort helpers + `toLocalInput`
+  (`format`), and event severity/grouping/subject classification (`classify`). app.js imports them.
+  - **`src/view.js`** (added 2026-07-15) — the view-layer math: the `applyFilters` predicate
+    (`matchesFilters`/`filterEvents`), window/nav math (`clampView`, `shiftRange`, `centeredRange`), minimap
+    coordinate transforms (`pxToTime`/`timeToPx`), `selectVisibleRuns`, `buildRunCoverIndex`/`runCoversAt`,
+    `snapToEdges`, and `jumpTitle`.
+    > **Only the math lives here.** Every memo cache (`visRunsCache`/`visRunsKey`,
+    > `runCoverCache`/`runCoverGen`) and all mutable state stayed in `app.js` **on purpose** — their
+    > *invalidation* is the subtle part (`applyFilters` bumps `runGen` and nulls `lastFeedSig` together),
+    > and splitting a cache from the state it keys on is exactly how that drifts. app.js decides *when* to
+    > call these and what to remember; view.js just computes.
+  - **`src/diagnostics.js`** (added 2026-07-15) — `buildDiagnostics()`, the pure shaping behind
+    `getDiagnostics()`. It exists so a Node test can run the **real** function: app.js touches the DOM at
+    import time and can never be imported, so before this split the privacy test asserted against a
+    hand-written *copy* of the payload shape. Two properties are load-bearing — it takes the **event
+    arrays** (so a leak is expressible and therefore provable-absent), and it **picks filter keys
+    explicitly instead of spreading** (so a new leaky field can't ride through unseen). Don't "simplify"
+    either away. See §7 and `tests/feedback.test.js`.
 - **`src/errors.js`** — global `error`/`unhandledrejection` handlers + a 50-entry ring buffer (also tees
   `console.error/warn`); shows a dismissible fatal banner; exports `getErrorLog`, `pushError`,
   `showErrorBanner`, `guard`. Imported first so handlers install before the app runs.
@@ -42,6 +60,19 @@ Pages** (`https://kah-eru.github.io/visualizer/`). No framework, no backend — 
 - **`.github/workflows/deploy.yml`** — on push to `main`: runs a **`test` job first** (`npm ci` →
   `npm run test:run`), then `build` (which `needs: test`) does `npm ci` → `npm run build` (with the
   `VITE_WEB3FORMS_KEY` secret) → publish `dist/` to Pages. A failing test blocks the deploy.
+- **`.github/workflows/ci.yml`** — on PRs/branches: the same unit-test job, **plus** an `e2e` job
+  (`npx playwright install --with-deps chromium` → build → `npm run test:e2e`). The e2e job is
+  deliberately **not** in `deploy.yml`'s gate: that gate is 100% reliable today and a browser job is the
+  most flake-prone thing in the repo, so a flake would block the live site for no reason. Promote it once
+  it's earned a green track record.
+- **`e2e/smoke.spec.js` + `playwright.config.js`** — one Playwright smoke over the **built** bundle
+  (`npm run preview`, hence the `/visualizer/` base path): load `Evnt_flow_test.csv`, assert the subtitle
+  count, a timeline bar, a feed row, and **zero console errors**. It is the only automated check on the DOM
+  render pipeline; keep it to whole-app wiring (the unit suite covers logic far better and faster).
+- **Coverage** — `npm run test:coverage` (`@vitest/coverage-v8`). Thresholds are **per-file on the pure
+  modules only**; `app.js` reports 0% because it can't be imported in Node, and that number is the *point*
+  — it's the visible measure of the untested DOM layer. A global threshold would fail every run on app.js
+  and train everyone to ignore the signal. See `TESTING_AUDIT.md` for the baseline.
 
 **Dev:** `npm run dev` (→ `localhost:5173/visualizer/`). **Build:** `npm run build` → `dist/`.
 **Preview a prod build:** `npm run preview` (→ `localhost:4173/visualizer/`).
@@ -488,22 +519,41 @@ index.html
 - **No framework / no state library** — it's direct DOM. Re-render functions rebuild `innerHTML` and
   re-attach listeners each time; keep that pattern.
 - **Run the tests after edits.** `npm run test:run` (CI mode) or `npm test` (watch). Vitest unit-tests
-  the pure data logic in `src/{parse,runs,format,classify}.js` (see `tests/`). They cover parsing,
-  program inference, run pairing, variance, window snapping, and event classification — but **not** the
-  DOM render pipeline, so still verify rendering visually in a browser (DevTools MCP) after UI changes.
-  CI runs these on every PR (`.github/workflows/ci.yml`) and the Pages deploy is **gated** on them
-  passing (`deploy.yml`: `build needs: test`).
-- **Where the coverage actually is — and isn't.** `TESTING_AUDIT.md` (2026-07-15) has the full scorecard.
-  Short version: the pure modules are well covered; **`src/app.js` (~64% of the source) has zero tests**,
-  which is why UI regressions keep landing there. The extraction pattern that made `classify.js` testable
-  is the intended fix — `applyFilters`' predicate, the window/nav math, and the minimap transforms are all
-  pure enough to move out. There's no coverage tooling, so nothing reports this in CI.
+  the pure data logic in `src/{parse,runs,format,classify,view,diagnostics}.js` (see `tests/`). They cover
+  parsing, program inference, run pairing, variance, window snapping, event classification, the filter
+  predicate, and the view math — but **not** the DOM render pipeline, so still verify rendering visually in
+  a browser (DevTools MCP) after UI changes. CI runs these on every PR (`.github/workflows/ci.yml`) and the
+  Pages deploy is **gated** on them passing (`deploy.yml`: `build needs: test`).
+- **Where the coverage actually is — and isn't.** `TESTING_AUDIT.md` has the full scorecard + baseline;
+  `npm run test:coverage` prints it. Short version: the pure modules are 97–100%; **`src/app.js` is 0%**,
+  which is why UI regressions keep landing there. The extraction pattern that made `classify.js` and now
+  `view.js` testable is the intended fix for anything pure enough to move out. What's left in app.js is
+  genuinely DOM-bound — extend `e2e/smoke.spec.js` for that, don't force an extraction.
+- **The privacy invariant is a test, not a convention — keep it that way.** Two functions form the gate:
+  `assembleReport` (`feedback.js`, the only place the outgoing report is built) and `buildDiagnostics`
+  (`diagnostics.js`, the only part of it derived from the loaded log). **Add report fields there, and
+  extend `tests/feedback.test.js` when you do.** Note `buildDiagnostics` deliberately takes the event
+  *arrays* and *picks* filter keys instead of spreading — both exist so a leak is catchable; changing
+  either to something "simpler" silently disarms the test. Don't add row content to `getDiagnostics`.
+- **Local-only logs in tests:** four of the five sample CSVs are gitignored (privacy), so
+  `tests/pipeline.test.js` guards them with `describe.skipIf(!existsSync(...))` and only
+  `Evnt_flow_test.csv` runs in CI. **Never "fix" a skip by committing a log.** Gotcha: `describe.skipIf`
+  still *executes* its callback to collect the tests inside it, so the CSV load must be **lazy** (inside
+  each `it`) — a top-level `load()` of a missing file throws ENOENT at collection and reds the whole file
+  instead of skipping it.
 
 ---
 
 ## 8. State of play / open items
 
 **Recent work (newest first; see `AI_HANDOFF.md` → "Last session" for the full per-commit log):**
+- **Testing remediation: 120 → 200 tests, + coverage tooling and a Playwright smoke** (from
+  `TESTING_AUDIT.md`'s P0–P2). The privacy invariant now runs the **real** shaping function
+  (`src/diagnostics.js`) instead of a hand-written copy of its shape — verified by injecting a leak and
+  watching it fail. `src/view.js` extracts the filter predicate + window/nav/minimap/run-selection math out
+  of app.js (100% covered); memo caches stayed put deliberately. `tests/pipeline.test.js` runs real CSVs
+  end-to-end through the app's own ingestion path (`eventsFromRows`), with the gitignored logs behind
+  `skipIf`. See §7 for the two traps (privacy gate, `skipIf` laziness).
 - **Feed → timeline jumps scroll the page + leave a sticky ring** — a demo found that the feed's
   ↗ timeline button "did nothing": it moved the playhead and pulsed the bar, but never scrolled the window,
   so the effect fired off-screen above the feed and expired. `locateOnTimeline` now scrolls to
@@ -574,13 +624,14 @@ index.html
   notice + a benign form-label a11y warning).
 
 **Still to do / worth verifying:**
-1. **Tests cover the pure data logic only** (`tests/` via Vitest) — the DOM render pipeline,
-   swimlane/scrubber wiring, and PDF export are still verified manually/via DevTools MCP. An
-   integration (jsdom) or E2E (Playwright) layer would close that gap. **`TESTING_AUDIT.md` audits this
-   properly** (grade B) and ranks the work: the **P0** is that `getDiagnostics()` (`app.js:1721`) sits
-   *outside* the feedback privacy test — that test mirrors its shape in a hand-written fixture, so a leaky
-   field added to the real function wouldn't be caught. Then: extract + test `app.js`'s pure logic, add
-   golden fixture tests over the sample CSVs already in the repo, add `@vitest/coverage-v8`.
+1. **The DOM layer is still mostly unverified by machine.** `TESTING_AUDIT.md`'s P0–P2 are **done** (see
+   the top of §8), so the privacy hole is closed, `app.js`'s pure logic is extracted into `view.js`, real
+   CSVs run end-to-end in `pipeline.test.js`, coverage is measured, and one Playwright smoke covers
+   load→render. What remains: **`app.js` is still 1,687 lines at 0% coverage**, and the swimlane/scrubber
+   wiring and PDF export are verified by hand. The audit's **P3 is open** — `guard()`'s catch branch,
+   `showErrorBanner`, and `initFeedback` (~half of `feedback.js`, 27% covered). If you want more DOM
+   confidence, extend `e2e/smoke.spec.js` rather than extracting more out of app.js — what's left there is
+   genuinely DOM-bound.
 2. **Large logs** rely on the 1500-row feed cap (`FEED_CAP`) + density binning; not virtualized.
 3. **Polish ideas** (not requested, just candidates): keyboard nav for the scrubber, persist toggle
    state across reloads, export the event/alert timeline data, narrow-screen layout for the drawer.

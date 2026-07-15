@@ -18,3 +18,28 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:run
+
+  # Whole-app smoke test over the built bundle (e2e/smoke.spec.js) — catches wiring/import/render
+  # breakage the Node unit tests can't see.
+  #
+  # Deliberately NOT wired into deploy.yml's `build needs:` gate. That gate is currently 100%
+  # reliable, and a browser job is the most flake-prone thing in this repo; a flaky gate would block
+  # the live site for no reason. Promote it once it has a green track record here.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

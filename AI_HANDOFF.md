@@ -51,13 +51,14 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 | `index.html` | Markup only; loads `src/main.js`. |
 | `src/main.js` | Entry: styles → errors → app → `initFeedback`. |
 | `src/app.js` | The dashboard core — filter → render → swimlane/scrubber/feed/minimap + all DOM wiring. Tightly coupled on purpose; shares mutable module-level state. |
-| `src/parse.js` / `runs.js` / `format.js` / `classify.js` | **Pure, DOM-free** data logic extracted out of app.js so it's unit-testable in Node. |
+| `src/parse.js` / `runs.js` / `format.js` / `classify.js` / `view.js` / `diagnostics.js` | **Pure, DOM-free** data logic extracted out of app.js so it's unit-testable in Node. |
 | `src/constants.js` | Mapping tables, key info, conversion constants. |
 | `src/errors.js` | Global error handlers + ring buffer + fatal banner. |
 | `src/feedback.js` | Feedback/crash-report button + modal → Web3Forms. |
-| `tests/*.test.js` | Vitest unit tests for the pure modules (+ `errors.js` ring buffer, feedback privacy). |
-| `TESTING_AUDIT.md` | **Read before adding tests** — audit of what's covered, what isn't, and a P0–P3 remediation list. |
-| `.github/workflows/` | `ci.yml` (PRs/branches) and `deploy.yml` (push to main → test-gated build → Pages). |
+| `tests/*.test.js` | Vitest unit tests for the pure modules (+ `errors.js` ring buffer, feedback privacy, golden pipeline runs over real CSVs). |
+| `e2e/smoke.spec.js` | The **only** automated DOM test: Playwright loads the built app + a CSV and asserts it renders. `npm run test:e2e`. |
+| `TESTING_AUDIT.md` | **Read before adding tests** — what's covered, what isn't, the coverage baseline, and the remaining P3. |
+| `.github/workflows/` | `ci.yml` (PRs/branches: unit + e2e) and `deploy.yml` (push to main → **unit**-test-gated build → Pages). |
 
 ---
 
@@ -79,15 +80,20 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Current state (as of 2026-07-15)
 
-- **Version:** 1.0.0. **Branch:** `main` (tip `99c49c6` + the testing audit below).
+- **Version:** 1.0.0. **Branch:** `main` (tip `5f661b4` + the testing-remediation work below).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
-- **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
-  the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **120 tests**.
-  The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
-  in a browser. **`TESTING_AUDIT.md` (2026-07-15) is the full picture**: the pure core is well covered,
-  but `src/app.js` (1,742 lines, ~64% of source, where the recent bug fixes all landed) has **zero** tests,
-  there's no coverage tooling, and the privacy test guards a hand-written *copy* of `getDiagnostics()`
-  rather than the real function. Overall grade **B** — see that file's P0–P3 list before adding tests.
+- **Tested: 200 Vitest tests across 9 files** (~3s) + **1 Playwright smoke test**. Covered: the pure data
+  logic (`parse`/`runs`/`format`/`classify`/`view`/`diagnostics`), the `errors.js` ring buffer, the
+  feedback-report privacy invariant, and golden end-to-end pipeline runs over real CSVs.
+  - **Coverage tooling exists now:** `npm run test:coverage`. Baseline **34% overall** — the pure modules
+    are 97–100%, `app.js` is **0% and expected to be** (it can't be imported in Node). That 0 is the
+    measure of the remaining blind spot, not a bug. Thresholds are per-file on the pure modules only.
+  - **Still hand-verified:** the render pipeline, swimlane/scrubber wiring, and PDF export. The smoke test
+    covers load→render only. After UI/render changes, still load `Evnt_flow_test.csv` in a browser.
+  - **`TESTING_AUDIT.md` is still the full picture**, now annotated with what landed. Its P0/P1/P2 are
+    **done**; **P3 (Gap 6 — `guard()`'s catch path + `initFeedback`) is open**. ⚠️ **That file's Gaps 4 & 5
+    contain a factual error** — they assume the five sample CSVs are available to tests, but four are
+    gitignored. See the correction block at its top before acting on them.
 - **Performance:** initial index JS ≈249 kB (gzip ≈88 kB). **PDF export is native browser print** now
   (`window.print()` + a `@media print` stylesheet) — the html2pdf.js/html2canvas dependency was removed
   (it froze the tab on large logs), so there's no on-demand export chunk anymore.
@@ -96,7 +102,47 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Testing-adequacy audit of the whole repo → `TESTING_AUDIT.md`** (read-only; no source or test files
+1. **Acted on the testing audit: P0 + both P1s + both P2s. 120 → 200 tests, plus coverage tooling and a
+   Playwright smoke test.** Driven by `TESTING_AUDIT.md`'s ranked list. `REPO_ANALYSIS_PLAN.md`'s P3 DRY
+   refactors stay deferred. What the next AI should know:
+   - **The privacy invariant now guards the real function (P0 — the important one).** `getDiagnostics`
+     (app.js) was exported but un-importable by any test (app.js touches the DOM at import), so
+     `feedback.test.js` built its input from a hand-written *copy* of the shape — a leak added to the real
+     function would have shipped green. The shaping is now `buildDiagnostics()` in **`src/diagnostics.js`**
+     (pure); `getDiagnostics` only reads the DOM and delegates. **It takes the event ARRAYS, not counts, on
+     purpose** — a leak has to be *expressible* there for the test to prove it doesn't happen — and it
+     **picks filter keys explicitly rather than spreading**, so a new leaky field can't ride through
+     unseen. Don't "simplify" either. Verified by injecting `rawLine` into it and watching both tests fail.
+   - **`src/view.js` (147 ln, 100% covered, 60 tests)** — the audit's P1 extraction: the `applyFilters`
+     predicate (`matchesFilters`), window/nav math (`clampView`/`shiftRange`/`centeredRange`), minimap
+     transforms (`pxToTime`/`timeToPx`), `selectVisibleRuns`, `buildRunCoverIndex`/`runCoversAt`,
+     `snapToEdges`, `jumpTitle`. `toLocalInput` moved to `format.js`. **Only the math moved — every memo
+     cache (`visRunsCache`, `runCoverCache`) and all mutable state stayed in `app.js`**, because their
+     *invalidation* is the subtle part (`applyFilters` does `runGen++; lastFeedSig = null;` together).
+     `barHTML` deliberately stayed too: it's 95% string assembly, so extracting its bar math would test the
+     trivial part and leave the real regression surface uncovered. app.js: 1,742 → 1,687 ln.
+   - **`tests/pipeline.test.js` — golden end-to-end runs over real CSVs**, sharing the app's ingestion path
+     via a new `eventsFromRows()` in `parse.js` (used by `handleFile` too). ⚠️ **The audit's Gaps 4 & 5 are
+     factually wrong**: they say "five real sample logs sit in the repo", but **four are gitignored** — only
+     synthetic `Evnt_flow_test.csv` is committed, so tests over the others would be red on every clone, and
+     "fixing" that by committing a log breaks the #1 rule. Resolution: the fixture block always runs; each
+     real log sits behind `describe.skipIf(!existsSync(...))`. **Gotcha: `describe.skipIf` still EXECUTES
+     its callback** to collect tests, so the CSV load must be lazy (inside the `it`s) — a top-level `load()`
+     throws ENOENT during collection and reds the file. Found by actually hiding a log and re-running.
+   - **Coverage + E2E (P2).** `npm run test:coverage` (baseline 34% overall; pure modules 97–100%; **app.js
+     0%, which is expected and is the point**). Thresholds are **per-file on the pure modules only** — a
+     global one would fail on app.js every run and train everyone to ignore it. `npm run test:e2e` runs one
+     Playwright smoke over the built bundle (load CSV → assert subtitle/bar/feed-row/**zero console
+     errors**). It's in **`ci.yml` only, NOT the deploy gate** — that gate is 100% reliable today and a
+     browser job is the flakiest thing here; promote it once it has a track record.
+   - **Verified.** 200 Vitest green, `npm run build` clean (250.7 kB), smoke green in 1.1s. Browser (Chrome
+     DevTools MCP) on `Evnt_flow_test.csv`: every refactored path re-checked live — Advanced on/off
+     (44↔42), Category→Zone (13), Alerts-only (2), Human-audit (3), reset (42); minimap drag moves the
+     window; feed ↗ rings a bar and renders the `view.js` `jumpTitle`; the live feedback payload shows real
+     diagnostics with **no CSV content**. On `Evnt_202606.csv` (73,346 events — the count `pipeline.test.js`
+     pins) a full re-filter + re-render is 217 ms; console clean on both.
+
+2. **Testing-adequacy audit of the whole repo → `TESTING_AUDIT.md`** (read-only; no source or test files
    changed, suite untouched at **120 green**). Reviewed every source and test file, both CI workflows, and
    ran the suite once. **Verdict: grade B — the data pipeline is well tested, the interactive layer isn't.**
    What the next AI should know:

@@ -96,6 +96,14 @@ export function centeredWindow(unit, center) {
   return { start: center - w / 2, end: center + w / 2 };
 }
 
+// Format a Date for a <input type="datetime-local"> value, in LOCAL time (minute precision).
+// Deliberately not toISOString().slice(0,16) — that would shift the displayed window by the UTC
+// offset. The date pickers show the operator's own clock, matching the log's local timestamps.
+export function toLocalInput(d) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /* ---- hydraulic variance ---- */
 export function eventVariancePct(e) {
   const ac = e.pairs.AC ? e.pairs.AC.value : null;

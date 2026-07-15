@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { parseRow } from "../src/parse.js";
+import { buildDiagnostics } from "../src/diagnostics.js";
 
 // The project's #1 hard rule: CSV/event-log CONTENTS must never leave the browser. The feedback
 // report may carry only filename, counts, and filter/view state. assembleReport() in feedback.js
 // is the single place the outgoing report is built (buildPayload/send/download all go through it),
 // so pinning it here turns the privacy promise into a CI-gated invariant.
+//
+// The chain under test is the REAL one on both halves: buildDiagnostics (the pure shaping behind
+// app.js's getDiagnostics — the only part of the report derived from the loaded log) feeds the real
+// assembleReport. This test used to build its input from a hand-written copy of the diagnostics
+// shape, which meant a leak added to the real function would still have passed here.
 //
 // feedback.js (via errors.js) touches window at import time, and assembleReport reads
 // location/navigator/window — provide the same minimal shims errors.test.js uses (no jsdom dep).
@@ -34,19 +40,27 @@ const ROWS = [
   ["06/17/26 06:10:00 -0600", "MS", "RD", "SY", "SN=SECRETSN99", "VP=1212.31"],
 ];
 
-// Mirrors the shape getDiagnostics() (app.js) returns: filename + counts + filter/view state only.
+// The REAL shaping function, handed the parsed events themselves — exactly what app.js hands it.
+// This is the point of the split: buildDiagnostics CAN see every row, so if it ever starts emitting
+// row content (a "recent events" sample, a raw line on an error), the assertions below catch it.
+//
+// Filters stay at their defaults on purpose. Their selected VALUES are legitimately carried by the
+// report (they're the user's current filter state), and substation in particular is chosen from a
+// dropdown populated out of the log's own SN/SB pairs — so seeding a marker here would appear in the
+// report by design and prove nothing. The invariant under test is that no event content reaches the
+// report through the event arrays.
 function diagnosticsFor(events) {
-  return {
+  return buildDiagnostics({
     fileName: "Evnt_flow_test.csv",
-    eventCount: events.length,
-    filteredCount: events.length,
+    allEvents: events,
+    filtered: events,
     hasHydro: true,
     windowUnit: "day",
-    range: { start: "2026-06-17T00:00:00.000Z", end: "2026-06-18T00:00:00.000Z" },
-    lanes: { program: 1, zone: 0, mainline: 1 },
+    range: { start: Date.UTC(2026, 5, 17), end: Date.UTC(2026, 5, 18) },
+    lanes: { program: new Set(["1"]), zone: new Set(), mainline: new Set(["1"]) },
     flowOn: false, eventTlOn: false,
     filters: { category: "", action: "", trigger: "", substation: "", alertsOnly: false, humanAudit: false, showAdvanced: false, varMin: "0", varMax: "100" },
-  };
+  });
 }
 
 afterEach(() => { vi.useRealTimers(); });

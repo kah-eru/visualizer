@@ -82,6 +82,20 @@ export function parseRow(cols) {
   };
 }
 
+// Parse CSV rows (as PapaParse hands them over: arrays of cells) into events, dropping the ones
+// parseRow rejects — blank lines, headers, anything with an unreadable timestamp. Each survivor gets
+// a stable `_id` (its index) that the feed uses to look its row back up: revealedFeedIds, the ↗ jump
+// highlight, and the At Playhead panel all key off it, so ids must stay dense and load-order stable.
+// Shared by handleFile (app.js) and the golden pipeline test, so both exercise the same path.
+export function eventsFromRows(rows) {
+  const events = [];
+  for (const cols of rows) {
+    const ev = parseRow(cols);
+    if (ev) { ev._id = events.length; events.push(ev); }
+  }
+  return events;
+}
+
 // Attribute zone events that lack a PG= field to the program that last ran that zone,
 // so program filtering keeps each zone's start AND its stop/done/soak lines together.
 // Mutates `progEff` on each event in `events`.

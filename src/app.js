@@ -16,22 +16,27 @@ import Papa from "papaparse";
 // is no heavy PDF/canvas library to load — see the report-export handler near the bottom of this file.
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
-  FEED_CAP, KEY_INFO, GENERAL_NOTES, HUMAN_TRIGGERS, MANUAL_PROG_TAG,
+  FEED_CAP, KEY_INFO, GENERAL_NOTES, MANUAL_PROG_TAG,
   STATUS_MAP, EVENT_CAUSE_MAP, MESSAGE_CODE_MAP, MESSAGE_CATEGORY_MAP,
   MESSAGE_PRIORITY_MAP, OBJECT_KEY_MAP, STOP_CONDITION_MAP, ZONE_MODE_MAP, DATA_GROUPS,
 } from "./constants.js";
 import { showErrorBanner, pushError } from "./errors.js";
 // Pure data logic lives in dependency-free modules (unit-tested in tests/); app.js wires them to the DOM.
-import { parseRow, inferEffectivePrograms } from "./parse.js";
+import { eventsFromRows, inferEffectivePrograms } from "./parse.js";
 import { RUN_START, RUN_STOP, makeRun, buildRunIntervals, zoneRunInProgram, mergeSpans } from "./runs.js";
 import {
   escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
-  windowLabel, snapWindow, centeredWindow, eventVariancePct, categoryColor,
+  windowLabel, snapWindow, centeredWindow, categoryColor, toLocalInput,
 } from "./format.js";
+import {
+  filterEvents, clampView, pxToTime, timeToPx, shiftRange, centeredRange,
+  selectVisibleRuns, buildRunCoverIndex, runCoversAt, snapToEdges, jumpTitle,
+} from "./view.js";
 import {
   isDurationMarker, feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
   eventRunTarget, selectFeedRows, eventJumpTarget,
 } from "./classify.js";
+import { buildDiagnostics } from "./diagnostics.js";
 
 /* ============================ State ============================ */
 let allEvents = [];     // full parsed dataset
@@ -125,13 +130,8 @@ function handleFile(file) {
     worker: false, // workers are blocked when the page is opened via file://
     complete: (results) => {
       try {
-        const rows = results.data;
-        allEvents = [];
         revealedFeedIds.clear(); // new file → drop any force-shown rows from the previous one
-        for (const cols of rows) {
-          const ev = parseRow(cols);
-          if (ev) { ev._id = allEvents.length; allEvents.push(ev); } // stable id for feed row lookup
-        }
+        allEvents = eventsFromRows(results.data);
         onDataLoaded();
       } catch (err) {
         pushError("parse", err && err.message, err && err.stack, file.name);
@@ -241,39 +241,26 @@ function onDataLoaded() {
   setScrubber(true); // scrubber on by default — shows the "running now" side panel (chart/x-scale now exist)
 }
 
-function toLocalInput(d) {
-  const pad = n => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+/* ============================ Filtering ============================ */
+// Read the sidebar into a plain options object; matchesFilters (view.js) owns the predicate.
+function readFilterOpts() {
+  return {
+    category: $("categoryFilter").value,
+    action: $("actionFilter").value,
+    trigger: $("triggerFilter").value,
+    substation: $("substationFilter").value,
+    minFlow: parseFloat($("flowSlider").value) || 0,
+    alertsOnly: $("alertsOnly").checked,
+    humanAudit: $("humanAudit").checked,
+    showAdvanced: $("showAdvanced").checked,
+    varMin: parseFloat($("varMin").value) || 0,
+    varMax: parseFloat($("varMax").value),
+    hasHydro,
+  };
 }
 
-/* ============================ Filtering ============================ */
 function applyFilters() {
-  const cat = $("categoryFilter").value;
-  const act = $("actionFilter").value;
-  const trg = $("triggerFilter").value;
-  const substation = $("substationFilter").value;
-  const minFlow = parseFloat($("flowSlider").value) || 0;
-  const alertsOnly = $("alertsOnly").checked;
-  const humanAudit = $("humanAudit").checked;
-  const showAdvanced = $("showAdvanced").checked;
-  const varMin = parseFloat($("varMin").value) || 0;
-  const varMax = parseFloat($("varMax").value);
-  const varActive = hasHydro && (varMin > 0 || varMax < 100);
-
-  // NOTE: the time window is NOT a filter here — it's the view window (currentRange), applied at
-  // render time. This lets zoom / nav / window presets roam the whole file independent of `filtered`.
-  filtered = allEvents.filter(e => {
-    if (!showAdvanced && e.isNoise) return false; // hide substation/network/two-wire chatter
-    if (cat && e.category !== cat) return false;
-    if (act && e.action !== act) return false;
-    if (trg && e.trigger !== trg) return false;
-    if (substation) { const sid = e.pairs.SN ? e.pairs.SN.raw : (e.pairs.SB ? e.pairs.SB.raw : null); if (String(sid) !== substation) return false; }
-    if (humanAudit && !HUMAN_TRIGGERS.has(e.trgCode)) return false;
-    if (alertsOnly && !e.isAlert) return false;
-    if (minFlow > 0) { if (e.flow == null || e.flow < minFlow) return false; }
-    if (varActive) { const v = eventVariancePct(e); if (v == null || v < varMin || v > varMax) return false; }
-    return true;
-  });
+  filtered = filterEvents(allEvents, readFilterOpts());
 
   // run intervals depend only on `filtered` → recompute their cache key and clear the memo
   runCache = {};
@@ -360,9 +347,8 @@ function setWindowUnitCentered(unit) {
 // slide the view (keeping the current window width) so time `t` is centered — used by the
 // corner jump-triangles to hop to the other end of a run at the same zoom level.
 function panToTime(t) {
-  const r = currentRange(), W = r.end - r.start;
-  let start = t - W / 2, end = t + W / 2;
-  zoomStack = []; zoomRange = { start, end };
+  const r = currentRange();
+  zoomStack = []; zoomRange = centeredRange(t, r.end - r.start);
   render();
 }
 
@@ -377,8 +363,7 @@ function navShift(dir) {
   if (windowUnit && windowUnit !== "custom" && windowUnit !== "all") {
     setWindowUnit(windowUnit, dir > 0 ? r.end + 1 : r.start - 1);
   } else {
-    const width = r.end - r.start;
-    zoomRange = { start: r.start + dir * width, end: r.end + dir * width };
+    zoomRange = shiftRange(r, dir);
     render();
   }
 }
@@ -876,17 +861,12 @@ function jumpTo(ts) { scrollPageTo($("feedScroll"), "nearest"); focusFeedEvent(t
 let runCoverCache = null, runCoverGen = -1;
 function runCovers(group, key, ts) {
   if (runCoverGen !== runGen || !runCoverCache) {
-    runCoverCache = new Map();
-    for (const [mode, g] of [["zone", "Zone"], ["program", "Program"], ["mainline", "Mainline"]]) {
-      for (const iv of runIntervals(mode)) {
-        const k = g + "|" + iv.key;
-        (runCoverCache.get(k) || runCoverCache.set(k, []).get(k)).push(iv);
-      }
-    }
+    runCoverCache = buildRunCoverIndex({
+      zone: runIntervals("zone"), program: runIntervals("program"), mainline: runIntervals("mainline"),
+    });
     runCoverGen = runGen;
   }
-  const list = runCoverCache.get(group + "|" + String(key));
-  return !!list && list.some(iv => iv.start <= ts && ts <= iv.end); // inclusive end, matching the bar
+  return runCoversAt(runCoverCache, group, key, ts);
 }
 
 // A jump can target a lane the user has hidden (zones start as "None"), which would leave nothing to
@@ -950,21 +930,11 @@ function visibleRunsAt() {
   const key = runGen + "|" + (showScheduled ? 1 : 0) + (showManual ? 1 : 0) + "|" +
     [...laneSel.program] + "|" + [...laneSel.zone] + "|" + [...laneSel.mainline];
   if (visRunsCache && visRunsKey === key) return visRunsCache;
-  const okType = iv => (iv.manual ? showManual : showScheduled);
-  const out = [];
-  if (laneSel.mainline.size) for (const iv of runIntervals("mainline")) if (laneSel.mainline.has(iv.key)) out.push({ ...iv, group: "Mainline", color: categoryColor("Mainline " + iv.key) });
-  if (laneSel.program.size) for (const iv of runIntervals("program")) if (laneSel.program.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Program", color: categoryColor("Program " + iv.key) });
-  if (laneSel.zone.size) for (const iv of runIntervals("zone")) if (laneSel.zone.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Zone", color: zoneColor(iv.key) });
-  // Mirror the swimlane's Manual Runs section: manual zone runs are listed whatever the Zones dropdown
-  // says, so the panel can answer "what was running by hand here?" on a fresh load. Dedupe against the
-  // pass above — a zone can be selected AND manual, and the panel must list that run once.
-  if (showManual) {
-    const seen = new Set(out.map(iv => iv.group + "|" + iv.key + "|" + iv.start));
-    for (const iv of runIntervals("zone")) {
-      if (!iv.manual || seen.has("Zone|" + iv.key + "|" + iv.start)) continue;
-      out.push({ ...iv, group: "Zone", color: zoneColor(iv.key) });
-    }
-  }
+  const out = selectVisibleRuns(
+    { program: runIntervals("program"), zone: runIntervals("zone"), mainline: runIntervals("mainline") },
+    laneSel, { showScheduled, showManual },
+    (group, k) => (group === "Zone" ? zoneColor(k) : categoryColor(group + " " + k)),
+  );
   visRunsCache = out; visRunsKey = key;
   return out;
 }
@@ -974,13 +944,7 @@ function snapTime(t) {
   if (!playheadSnap) return t;
   const xScale = chartX();
   if (!xScale) return t;
-  const tolPx = 8, px = xScale.getPixelForValue(t);
-  let best = t, bestD = tolPx;
-  for (const iv of visibleRunsAt()) for (const edge of [iv.start, iv.end]) {
-    const d = Math.abs(xScale.getPixelForValue(edge) - px);
-    if (d < bestD) { bestD = d; best = edge; }
-  }
-  return best;
+  return snapToEdges(t, visibleRunsAt(), ms => xScale.getPixelForValue(ms));
 }
 
 function setPlayhead(t) { playheadTime = t; positionPlayhead(); }
@@ -1097,17 +1061,6 @@ function updateScrubPanel() {
 
 // Spell out where a row's ↗ actually goes and what it will mark there — the button used to promise a
 // timeline jump on every row, including the ~72% that had nothing to land on.
-function jumpTitle(jump, ts) {
-  const when = fmtTimeDate(ts, 0);
-  const marks = [jump.bar && "rings its run bar", jump.tick && "rings its red alert tick",
-    jump.diamond && "rings its marker on the Interventions & Alerts timeline"].filter(Boolean).join(", ");
-  const where = jump.dest === "events"
-    ? "Scroll to the Interventions & Alerts timeline at this event"
-    : "Scroll up to the timeline at this event";
-  const extra = jump.dest === "events" ? " Switches the Events timeline on if it's off." : "";
-  return `${where} (${when}): the scrubber lands on it and it ${marks} until the next jump.${extra}`;
-}
-
 function feedRowHTML(e, idx) {
   const sev = feedSeverity(e);
   const sevCls = sev === "crit" ? "feed-crit" : sev === "warn" ? "feed-warn" : sev === "audit" ? "feed-audit" : "";
@@ -1362,18 +1315,13 @@ const miniWindow = $("miniWindow");
 const miniCanvas = $("miniCanvas");
 const miniPlayhead = $("miniPlayhead");
 const miniFull = () => ({ s: dataMinT, e: dataMaxT + 1 });
-function miniX2T(px) { const f = miniFull(), W = miniMap.clientWidth || 1; return f.s + (px / W) * (f.e - f.s); }
-function miniT2X(t) { const f = miniFull(), W = miniMap.clientWidth || 1; return (t - f.s) / (f.e - f.s) * W; }
+const miniW = () => miniMap.clientWidth || 1;
+function miniX2T(px) { return pxToTime(px, miniW(), miniFull()); }
+function miniT2X(t) { return timeToPx(t, miniW(), miniFull()); }
 
 // set the view to [start,end] (clamped to the full span, min 1s) — a custom, non-aligned window
-function clampView(start, end) {
-  const f = miniFull();
-  let s = Math.max(f.s, Math.min(start, f.e - 1000));
-  let e = Math.min(f.e, Math.max(end, s + 1000));
-  return { s, e };
-}
 function setViewRange(start, end) {
-  const { s, e } = clampView(start, end);
+  const { s, e } = clampView(start, end, miniFull());
   zoomStack = []; windowUnit = "custom"; zoomRange = { start: s, end: e };
   render();
 }
@@ -1381,7 +1329,7 @@ function setViewRange(start, end) {
 // during drag: move the box instantly (cheap) but coalesce the heavy full re-render to one/frame
 let viewRaf = null, pendingView = null;
 function setViewRangeLive(start, end) {
-  const { s, e } = clampView(start, end);
+  const { s, e } = clampView(start, end, miniFull());
   pendingView = { s, e };
   layoutMiniWindow(s, e); // instant visual feedback without a full render
   if (viewRaf) return;
@@ -1716,21 +1664,18 @@ window.addEventListener("afterprint", () => {
 });
 
 /* ============================ Diagnostics for the feedback report ============================ */
-// Snapshot of app state for the crash/feedback payload. Deliberately excludes ALL CSV row
-// content — only the filename, counts, and current filter/view selections.
+// Reads the DOM/module state; buildDiagnostics (diagnostics.js) shapes it. The shaping is pure and
+// lives there so tests/feedback.test.js can run the REAL function — this one can't be imported in
+// Node (app.js touches the DOM at import time). Add payload fields there, not here.
 export function getDiagnostics() {
   const safeVal = id => { const el = $(id); return el ? el.value : null; };
   const safeChk = id => { const el = $(id); return el ? el.checked : null; };
   let range = null;
   try { range = currentRange(); } catch { /* before any data is loaded */ }
-  return {
-    fileName: fileNameEl.textContent || null,
-    eventCount: allEvents.length,
-    filteredCount: filtered.length,
-    hasHydro,
-    windowUnit,
-    range: range ? { start: new Date(range.start).toISOString(), end: new Date(range.end).toISOString() } : null,
-    lanes: { program: laneSel.program.size, zone: laneSel.zone.size, mainline: laneSel.mainline.size },
+  return buildDiagnostics({
+    fileName: fileNameEl.textContent,
+    allEvents, filtered, hasHydro, windowUnit, range,
+    lanes: laneSel,
     flowOn, eventTlOn,
     filters: {
       category: safeVal("categoryFilter"), action: safeVal("actionFilter"),
@@ -1738,5 +1683,5 @@ export function getDiagnostics() {
       alertsOnly: safeChk("alertsOnly"), humanAudit: safeChk("humanAudit"), showAdvanced: safeChk("showAdvanced"),
       varMin: safeVal("varMin"), varMax: safeVal("varMax"),
     },
-  };
+  });
 }

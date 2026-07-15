@@ -5,6 +5,22 @@
 > refactors) and P4 (structural) are intentionally **deferred**. One plan item was decided the
 > opposite way after inspecting real data: `ZN,SP` is **not** a zone-run stop (see 2.3).
 
+> **Superseded on testing (2026-07-15).** This sweep's testing analysis (Pillar 2, P4.17) has been
+> replaced by **`TESTING_AUDIT.md`**, which is more thorough and now records what actually landed.
+> Since then: **2.7's `errors.js` + privacy tests are done**, and **P4.17 (the Playwright smoke over
+> the DOM render) is done** — `e2e/smoke.spec.js`, wired into `ci.yml` (deliberately *not* the deploy
+> gate; see the audit for why). Read `TESTING_AUDIT.md` first for anything test-related.
+>
+> ⚠️ **2.8 and P4.17 below contain a factual error worth knowing:** they assume the sample CSVs are
+> available to tests. **Four of the five real logs are gitignored** — only synthetic
+> `Evnt_flow_test.csv` is committed, so tests can only rely on that one in CI. (`TESTING_AUDIT.md`
+> repeats and corrects the same mistake.) Never "fix" a skipped test by committing a real log.
+>
+> **Still genuinely open here: P3 (items 13–16, DRY refactors) and P4.18 (feed virtualization).**
+> Note item 14's premise has since drifted: `FILTER_SELECTS` now mixes selects with checkboxes, so
+> "derive the reset list from `FILTER_SELECTS`" is no longer the clean one-liner described — it needs
+> splitting into value-based and checked-based lists first.
+
 > Produced from a full repo sweep (2026-07-09): all root Markdown docs (`AI_HANDOFF.md`, `NOTES.md`,
 > `docs/OBJECT_DEFINITIONS.md`, `docs/HOW_TO_USE.md`), all five root CSV logs
 > (`Events1000.csv`, `Events_test.csv`, `Evnt_202606.csv`, `Evnt_flow_test.csv`, `testmanual.csv`),
@@ -159,7 +175,12 @@ modules chained together.
   content or `pairs` values appear anywhere in the serialized report. This turns the privacy promise
   into a gated invariant.
 
-### 2.8 No DOM/integration layer (known, documented gap)
+### 2.8 No DOM/integration layer (known, documented gap) — ✅ RESOLVED (2026-07-15)
+> **DONE, with one deviation.** `e2e/smoke.spec.js` loads `Evnt_flow_test.csv` and asserts the
+> subtitle count, a timeline bar, a feed row, and zero console errors — as specified. It runs in
+> `ci.yml` but is **not** wired into the deploy gate (see P4.17 for the reasoning). The remaining
+> DOM surface (scrubber wiring, PDF export) is still hand-verified.
+
 The render pipeline, swimlane/scrubber wiring, and PDF export are verified by hand per
 `AI_HANDOFF.md`. **Action (roadmap P4):** a minimal Playwright (or Vitest+jsdom) smoke: load
 `Evnt_flow_test.csv`, assert bar counts / feed rows / no console errors. Keeps the deploy gate
@@ -260,9 +281,13 @@ test-gated), and a browser smoke with `Evnt_flow_test.csv` for anything touching
 15. Single modal helper for Reference/Guide/Feedback (1.5).
 16. Align `isDurationMarker` with the run boundary sets, or document the asymmetry (1.3).
 
-### P4 — Structural (optional, when capacity allows) — ⏸ DEFERRED
-17. Playwright (or jsdom) smoke over the DOM render pipeline using `Evnt_flow_test.csv` (2.8),
-    wired into `ci.yml` so the deploy gate covers UI regressions.
+### P4 — Structural (optional, when capacity allows) — 17 ✅ DONE (2026-07-15), 18 ⏸ DEFERRED
+17. ✅ **DONE** — Playwright smoke over the DOM render pipeline using `Evnt_flow_test.csv` (2.8):
+    `e2e/smoke.spec.js` + `playwright.config.js`, `npm run test:e2e`, wired into `ci.yml`.
+    **Deviation from this plan, deliberately:** it is **not** in the deploy gate. `deploy.yml` still
+    gates only on `npm run test:run`. That gate is 100% reliable today and a browser job is the most
+    flake-prone thing in the repo — a flake would block the live site for no reason. Promote it once
+    it has a green track record. See `TESTING_AUDIT.md`.
 18. Feed virtualization to lift `FEED_CAP` (3.6) — only if users hit the cap in practice.
 
 ---

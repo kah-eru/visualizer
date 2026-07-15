@@ -4,6 +4,11 @@ node_modules/
 # Vite build output (published to GitHub Pages by the deploy workflow)
 dist/
 
+# Test artifacts: coverage report (npm run test:coverage) + Playwright's run output
+coverage/
+test-results/
+playwright-report/
+
 # Local env (holds the feedback endpoint; provided as a CI secret for builds)
 .env
 .env.local
@@ -22,6 +27,12 @@ Events1000.csv
 
 # Baseline's internal protocol spec — local reference only, never publish (this repo is public).
 Baseline Protocol Specification - BaseManager Opcodes.md
+
+# Personal presentation prep / study notes — local only, never publish (this repo is public).
+PRESENTATION_QA.md
+
+# Local agent planning scratch (Claude Code writes plans here; settings.json below is shared).
+.claude/plans/
 
 # Personal (per-machine) Claude Code settings; shared settings live in .claude/settings.json
 .claude/settings.local.json

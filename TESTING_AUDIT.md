@@ -4,6 +4,63 @@
 
 **Suite status at audit time:** `npx vitest run` → **6 files, 120 tests, all passing** in ~2s (vitest 2.1.9, Node environment, `TZ=UTC` pinned in `vitest.config.js`).
 
+> ## Remediation status (updated 2026-07-15, post-implementation)
+>
+> **P0, both P1 items, and both P2 items are DONE.** Suite is now **9 files, 200 tests** (~3s), plus a
+> Playwright smoke test and coverage tooling. P3 (Gap 6) remains **open**. What landed:
+>
+> | Gap | Status | What was done |
+> |---|---|---|
+> | 2 — privacy test guards a copy | ✅ | `buildDiagnostics` extracted to `src/diagnostics.js` (pure); `getDiagnostics` (app.js) now only reads the DOM and delegates. `feedback.test.js` runs the **real** function; new `tests/diagnostics.test.js` pins its key whitelist. **Verified by injecting a leak and watching both tests fail.** |
+> | 1 — `app.js` untested | ✅ (partial by design) | `src/view.js` (147 ln, **100% covered**, 60 tests): filter predicate, window/nav math, minimap transforms, run selection/coverage, snapping, `jumpTitle`. `toLocalInput` → `format.js`. Memo caches stayed in `app.js` on purpose. `app.js` 1,742 → **1,687 ln**. |
+> | 5 — CSV ingestion untested | ✅ | `eventsFromRows` extracted to `parse.js` (shared by `handleFile` and the test); `tests/pipeline.test.js` runs real CSVs through the whole chain. **See the correction below.** |
+> | 3 — no coverage | ✅ | `@vitest/coverage-v8` + `npm run test:coverage`, per-file thresholds on the pure modules only. |
+> | 4 — no E2E | ✅ | `e2e/smoke.spec.js` + `playwright.config.js`; `npm run test:e2e`. Wired into `ci.yml` only — **not** the deploy gate (see below). |
+> | 6 — `guard()` / `initFeedback` | ⏸ open | Still P3. Needs a DOM; `errors.js` 70%, `feedback.js` 27%. |
+>
+> ### Correction to this audit's own premise (Gaps 4 & 5)
+>
+> Gap 5 below says *"five real sample logs sit in the repo"* and Gap 4 proposes a smoke test that drops
+> `Events_test.csv`. **That is wrong, and following it literally would have broken CI or the privacy
+> rule.** Four of the five logs are gitignored (`testmanual.csv`, `Evnt_2*.csv`, `Events_test.csv`,
+> `Events1000.csv` — confirmed with `git check-ignore`); only the synthetic `Evnt_flow_test.csv` is
+> committed. Tests over the other four would be red on every fresh clone, and the obvious "fix" —
+> committing a log — violates the repo's #1 rule.
+>
+> **How it was resolved:** `pipeline.test.js` always pins `Evnt_flow_test.csv` (gates CI), and guards
+> each real log behind `describe.skipIf(!existsSync(...))` — full protection locally, clean skip in CI.
+> The smoke test uses the synthetic fixture. *Gotcha for whoever touches this next:* `describe.skipIf`
+> still **executes its callback** to collect tests, so the CSV load must be lazy (inside the `it`s) —
+> a top-level `load()` throws ENOENT during collection and reds the file instead of skipping it. Both
+> paths were verified by temporarily hiding a log.
+>
+> ### Coverage baseline (2026-07-15, first measurement)
+>
+> ```
+> File            | % Stmts | % Branch | % Funcs | % Lines
+> All files       |   34.33 |    94.00 |   78.57 |   34.33
+>  app.js         |       0 |        0 |       0 |       0   ← the blind spot, now measured
+>  view.js        |     100 |      100 |     100 |     100
+>  diagnostics.js |     100 |      100 |     100 |     100
+>  parse.js       |     100 |    87.34 |     100 |     100
+>  runs.js        |     100 |    98.09 |     100 |     100
+>  classify.js    |     100 |    93.93 |     100 |     100
+>  format.js      |   97.34 |      100 |    92.3 |   97.34
+>  errors.js      |   70.17 |    70.58 |      75 |   70.17   ← Gap 6
+>  feedback.js    |   27.48 |       25 |    7.69 |   27.48   ← Gap 6
+> ```
+>
+> `app.js` reporting 0% is **expected and is the point** — it can't be imported in Node at all. That
+> number is the visible measure of Gap 1, and it should fall as more logic is extracted. Thresholds are
+> therefore **per-file on the pure modules only**: a global threshold would fail on `app.js` every run
+> and train everyone to ignore the signal entirely.
+>
+> ### Why the smoke test is not a deploy gate
+>
+> `ci.yml` runs it on PRs/branches; `deploy.yml` still gates only on `npm run test:run`. The deploy gate
+> is currently 100% reliable and a browser job is the most flake-prone thing here — a flaky gate blocks
+> the live site. Promote it once it has a green track record.
+
 ---
 
 ## Verdict
@@ -20,19 +77,26 @@ The gap is `src/app.js`: 1,742 lines (~64% of all source), zero tests, and — p
 
 ## Scorecard
 
+*(As of the audit. See the remediation table above for what changed — the post-fix figures are in
+brackets.)*
+
 | Module | Lines | Test file | Coverage assessment |
 |---|---|---|---|
-| `src/parse.js` | 106 | `parse.test.js` (165 ln, 20 tests) | **Excellent** — timestamps (both CSV variants), enum decoding, unit conversion, null/garbage input, program inference incl. out-of-order events |
+| `src/parse.js` | 106 [120] | `parse.test.js` (165 ln, 20 tests) | **Excellent** — timestamps (both CSV variants), enum decoding, unit conversion, null/garbage input, program inference incl. out-of-order events. *[+ `eventsFromRows`, covered by `pipeline.test.js`]* |
 | `src/runs.js` | 136 | `runs.test.js` (308 ln, 32 tests) | **Excellent** — all 3 modes, manual/terminated/ongoing, 3-tier no-DN inference, cycle-and-soak segments, real-log regressions |
 | `src/classify.js` | 156 | `classify.test.js` (259 ln, 41 tests) | **Excellent** — every export tested, incl. jump-routing and feed-selection bug regressions |
-| `src/format.js` | 105 | `format.test.js` (132 ln, 20 tests) | **Good** — all exports; time formatting checked structurally (locale-tolerant), which is a sensible tradeoff |
+| `src/format.js` | 105 [113] | `format.test.js` (132 ln, 20 tests) | **Good** — all exports; time formatting checked structurally (locale-tolerant), which is a sensible tradeoff. *[+ `toLocalInput`, moved in from app.js]* |
 | `src/errors.js` | 114 | `errors.test.js` (52 ln, 5 tests) | **Partial** — ring buffer solid; `guard()` error path, `showErrorBanner`, and global handler wiring untested |
-| `src/feedback.js` | 211 | `feedback.test.js` (88 ln, 2 tests) | **Partial** — `assembleReport` privacy invariant + key whitelist tested; `initFeedback` (~half the file: widget, send/download paths) untested |
-| `src/app.js` | **1,742** | **none** | **Untested** — see Gap 1 |
+| `src/feedback.js` | 211 | `feedback.test.js` (88 ln [102], 2 tests) | **Partial** — `assembleReport` privacy invariant + key whitelist tested; `initFeedback` (~half the file: widget, send/download paths) untested. *[now fed by the real `buildDiagnostics`, closing Gap 2]* |
+| `src/app.js` | **1,742** [1,687] | **none** | **Untested** — see Gap 1 |
+| `src/view.js` | *[147]* | *[`view.test.js` (317 ln, 60 tests)]* | *[**Excellent** — 100%. Extracted from app.js: filter predicate, window/nav math, minimap transforms, run selection/coverage, snapping, `jumpTitle`]* |
+| `src/diagnostics.js` | *[52]* | *[`diagnostics.test.js` (62 ln, 5 tests)]* | *[**Excellent** — 100%. The pure shaping behind `getDiagnostics`]* |
 | `src/constants.js` | 154 | — (data only) | OK — exercised indirectly by parse/classify tests |
 | `src/main.js` | 9 | — (entry point) | OK — trivial |
+| — | — | *[`pipeline.test.js` (164 ln, 15 tests)]* | *[Golden end-to-end tests over real CSVs — Gap 5]* |
 
-Totals: ~2,730 lines of source, 1,004 lines of tests.
+Totals: ~2,730 lines of source, 1,004 lines of tests. *[After remediation: ~2,930 source, ~1,600 tests
+across 9 files + 1 Playwright spec.]*
 
 ---
 
@@ -109,9 +173,19 @@ These are lower priority: they are error-display plumbing, and fully testing the
 
 | Priority | Action | Effort | Payoff |
 |---|---|---|---|
-| **P0** | Close the `getDiagnostics` hole in the privacy test (Gap 2) | Small | The repo's #1 invariant becomes actually enforced |
-| **P1** | Extract `app.js` pure logic (filters, window math, minimap transforms) into a tested module (Gap 1) | Medium | Tests where regressions actually occur |
-| **P1** | Golden fixture tests over the sample CSVs (Gap 5) | Small | End-to-end pipeline protection using data already in the repo |
-| **P2** | Add `@vitest/coverage-v8` + coverage script (Gap 3) | Small | Makes the blind spot visible and trackable |
-| **P2** | One Playwright smoke test on the built app (Gap 4) | Medium | Catches whole-app/wiring breakage no unit test can |
+| ~~**P0**~~ ✅ | Close the `getDiagnostics` hole in the privacy test (Gap 2) | Small | The repo's #1 invariant becomes actually enforced |
+| ~~**P1**~~ ✅ | Extract `app.js` pure logic (filters, window math, minimap transforms) into a tested module (Gap 1) | Medium | Tests where regressions actually occur |
+| ~~**P1**~~ ✅ | Golden fixture tests over the sample CSVs (Gap 5) | Small | End-to-end pipeline protection using data already in the repo |
+| ~~**P2**~~ ✅ | Add `@vitest/coverage-v8` + coverage script (Gap 3) | Small | Makes the blind spot visible and trackable |
+| ~~**P2**~~ ✅ | One Playwright smoke test on the built app (Gap 4) | Medium | Catches whole-app/wiring breakage no unit test can |
 | **P3** | Cover `guard()` error path and `initFeedback` (Gap 6) | Small | Completes the error/feedback plumbing |
+
+### Still open after the 2026-07-15 remediation
+
+- **Gap 6 (P3)** — `guard()`'s catch branch, `showErrorBanner`, and `initFeedback` (the widget, the
+  Web3Forms send path, the download fallback). Needs a DOM; the smoke test could cover some incidentally.
+- **Gap 1 is reduced, not closed.** `app.js` is still 1,687 lines at 0%. What remains there is genuinely
+  DOM-bound — the render pipeline, swimlane/scrubber wiring, event delegation — and is better served by
+  extending the smoke test than by extracting more. `barHTML` was **deliberately left** in place: it is
+  95% HTML-string assembly, so extracting its four lines of bar arithmetic would test the trivial part
+  and leave the actual regression surface uncovered.

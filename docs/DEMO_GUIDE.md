@@ -206,7 +206,8 @@ users know when a value is inferred vs. logged.
 
 ## 7. Known gaps / honest caveats (say these if asked — builds trust)
 
-- **No E2E test layer** over the DOM render yet; pure data logic is unit-tested and gates the deploy.
+- **Thin E2E layer** over the DOM render: one Playwright smoke test proves the app loads a CSV and
+  renders; interactions are still verified by hand. The pure data logic is unit-tested and gates the deploy.
 - **Feed isn't virtualized** — very large logs rely on a row cap + density binning.
 - **Polish backlog:** persist toggle state across reloads, keyboard nav for the scrubber, export of the
   event/alert timeline data, a narrow-screen/mobile layout.
