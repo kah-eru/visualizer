@@ -82,6 +82,21 @@ export function buildRunIntervals(evs, mode, globalEnd) {
   return out;
 }
 
+// Merge runs into their covering spans, collecting the distinct keys in each — the envelope drawn on
+// the Manual Runs parent track. Derived from the runs themselves (not the controller's MR,SR/MR,SP
+// session rows) so the parent can never disagree with the child rows below it, and so a log that
+// flags runs manual by human trigger alone still gets a parent bar. Abutting spans (prev.end === s)
+// merge: two back-to-back manual runs read as one stretch of hand-watering.
+export function mergeSpans(runs) {
+  const out = [];
+  for (const r of [...runs].sort((a, b) => a.start - b.start || a.end - b.end)) {
+    const prev = out[out.length - 1];
+    if (prev && r.start <= prev.end) { if (r.end > prev.end) prev.end = r.end; if (!prev.keys.includes(r.key)) prev.keys.push(r.key); }
+    else out.push({ start: r.start, end: r.end, keys: [r.key] });
+  }
+  return out;
+}
+
 // A zone run belongs to a program lane when its PG tag matches that program, OR — when its tag
 // corresponds to no real program run anywhere (orphaned, e.g. a ZN,WT line stamped with a program
 // that never started) — when the run overlaps one of that program's run windows. This recovers the

@@ -16,14 +16,14 @@ import Papa from "papaparse";
 // is no heavy PDF/canvas library to load — see the report-export handler near the bottom of this file.
 import {
   CATEGORY_MAP, ACTION_MAP, TRIGGER_MAP,
-  FEED_CAP, KEY_INFO, GENERAL_NOTES, HUMAN_TRIGGERS,
+  FEED_CAP, KEY_INFO, GENERAL_NOTES, HUMAN_TRIGGERS, MANUAL_PROG_TAG,
   STATUS_MAP, EVENT_CAUSE_MAP, MESSAGE_CODE_MAP, MESSAGE_CATEGORY_MAP,
   MESSAGE_PRIORITY_MAP, OBJECT_KEY_MAP, STOP_CONDITION_MAP, ZONE_MODE_MAP, DATA_GROUPS,
 } from "./constants.js";
 import { showErrorBanner, pushError } from "./errors.js";
 // Pure data logic lives in dependency-free modules (unit-tested in tests/); app.js wires them to the DOM.
 import { parseRow, inferEffectivePrograms } from "./parse.js";
-import { RUN_START, RUN_STOP, makeRun, buildRunIntervals, zoneRunInProgram } from "./runs.js";
+import { RUN_START, RUN_STOP, makeRun, buildRunIntervals, zoneRunInProgram, mergeSpans } from "./runs.js";
 import {
   escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
   windowLabel, snapWindow, centeredWindow, eventVariancePct, categoryColor,
@@ -196,8 +196,11 @@ function onDataLoaded() {
   zoomRange = snapWindow("day", maxT, { min: dataMinT, max: dataMaxT });
   zoomStack = [];
 
-  // populate the timeline lane dropdowns (multi-select checklists)
-  fillLaneDropdown("program", distinctSorted(allEvents.map(e => e.progEff)), p => `Program ${p}`, p => categoryColor("Program " + p), true);
+  // populate the timeline lane dropdowns (multi-select checklists). PG=MR isn't a program — it's the
+  // tag on a manual zone run (see the Manual Runs lane), and it has no program bars to show, so keep
+  // it out of the Programs list rather than offering a lane that can only ever render empty.
+  fillLaneDropdown("program", distinctSorted(allEvents.map(e => e.progEff)).filter(p => String(p) !== MANUAL_PROG_TAG),
+    p => `Program ${p}`, p => categoryColor("Program " + p), true);
   fillLaneDropdown("zone", distinctSorted(allEvents.flatMap(e => e.zones)), z => `Zone ${z}`, z => zoneColor(z), false);
   fillLaneDropdown("mainline", distinctSorted(allEvents.map(e => e.mainline)), m => `Mainline ${m}`, m => categoryColor("Mainline " + m), true);
 
@@ -214,6 +217,7 @@ function onDataLoaded() {
   // fresh log → clear any leftover feed search/sort and jump highlight from a previous file
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
   locatedRun = null; locatedTs = null;
+  expandedPrograms.clear(); expandedManual = true;
   $("feedHead").classList.remove("hidden"); // sortable column header appears once a log is loaded
 
   // detect hydraulic telemetry → reveal the variance slider only when meaningful
@@ -393,6 +397,9 @@ function updateNavControls(range) {
 }
 
 let expandedPrograms = new Set(); // program keys whose zone drop-down is open (program lane view)
+// Is the Manual Runs lane showing its per-zone rows? Starts open: manual runs are the whole point of
+// that section, and it only ever holds the zones that ran manually *in the window* (a handful/day).
+let expandedManual = true;
 // Run start/done rows are normally hidden from the feed (drawn as bars). When the user clicks a
 // "Running now" item in the scrubber panel, we force-show that specific event's raw row here.
 let revealedFeedIds = new Set();
@@ -566,12 +573,20 @@ function renderSwimlane(range, attempt) {
   const section = txt => groupsOn > 1 ? `<div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mt-2 mb-1 pl-1">${txt}</div>` : "";
   const track = (lbl, bars, bg) => `<div class="tl-track" style="height:${SWIM_ROW_H}px;margin-bottom:3px;${bg ? "background:" + bg + ";" : ""}">${lbl}${bars}</div>`;
 
-  // build runs per enabled group
+  // build runs per enabled group. zoneRunsAll is run-type filtered too: the rows under an expanded
+  // program are zone runs like any other, so unchecking Manual must drop them there as well.
   const progRuns = showPrograms ? runIntervals("program").filter(inWin).filter(runTypeOk) : [];
-  const zoneRunsAll = (showPrograms || showZones) ? runIntervals("zone").filter(inWin) : [];
-  const zoneRuns = showZones ? zoneRunsAll.filter(runTypeOk) : [];
+  const zoneRunsAll = (showPrograms || showZones) ? runIntervals("zone").filter(inWin).filter(runTypeOk) : [];
+  const zoneRuns = showZones ? zoneRunsAll : [];
   const mainRuns = showMainlines ? runIntervals("mainline").filter(inWin) : [];
-  $("statRuns").textContent = (progRuns.length + zoneRuns.length + mainRuns.length).toLocaleString();
+  // Manual runs get their own section, independent of the Zones dropdown (which starts empty — see
+  // fillLaneDropdown in onDataLoaded). Without this a log whose manual runs are all zone runs shows
+  // none of them on load, which is exactly the demo bug this section exists to fix.
+  const manualRuns = showManual ? runIntervals("zone").filter(inWin).filter(iv => iv.manual) : [];
+  // When Zones is on, every manual run is already counted in zoneRuns (a manual run passes runTypeOk
+  // whenever showManual) — only count the section separately when it's showing runs nothing else does.
+  const manualExtra = showZones ? 0 : manualRuns.length;
+  $("statRuns").textContent = (progRuns.length + zoneRuns.length + mainRuns.length + manualExtra).toLocaleString();
 
   // index runs by key once (instead of re-filtering the whole array per key in the loops below)
   const byKey = runs => { const m = new Map(); for (const iv of runs) (m.get(iv.key) || m.set(iv.key, []).get(iv.key)).push(iv); return m; };
@@ -592,12 +607,40 @@ function renderSwimlane(range, attempt) {
       html += track(`<span style="color:#cbd5e1;${lblBase}" title="Mainline ${escapeHtml(k)}">${swatch(col)}ML${escapeHtml(k)}</span>`, bars);
     }
   }
+  // Manual Runs (expandable to the zones that ran by hand). Deliberately NOT tied to the Zones
+  // dropdown: manual runs are zone runs, zones start unselected, so this is the only thing that puts
+  // them on screen without asking the user to tick ~every zone in the log.
+  if (manualRuns.length) {
+    html += section("Manual Runs");
+    const spans = mergeSpans(manualRuns);
+    // Summary bars only — no data-runstart, so the delegated bar-click handler below ignores them and
+    // the per-zone rows stay the clickable thing. The label toggles the rows.
+    const bars = spans.map(s => {
+      const x1 = xOf(s.start), width = Math.max(2, xOf(s.end) - x1);
+      const zones = s.keys.slice().sort(numCmp);
+      const title = `${zones.length} zone${zones.length > 1 ? "s" : ""} run by hand: ${zones.map(z => "Z" + z).join(", ")} — ${fmtTime(s.start, range.end - range.start)} → ${fmtTime(s.end, range.end - range.start)}`;
+      return `<div class="tl-bar tl-manual-envelope" title="${escapeHtml(title)}" style="left:${x1}px;width:${width}px;"></div>`;
+    }).join("");
+    const lbl = `<span class="lane-label" data-manual="1" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Manual runs — started by a person, not the schedule. Click to ${expandedManual ? "hide" : "show"} the zones. Shown regardless of the Zones dropdown; hide the section with Run type → Manual.">${expandedManual ? "▾" : "▸"} MR</span>`;
+    html += track(lbl, bars);
+    if (expandedManual) {
+      const manualByKey = byKey(manualRuns);
+      for (const z of sortedKeys(manualRuns)) {
+        const col = zoneColor(z);
+        const zbars = (manualByKey.get(z) || []).map(iv => zoneBars(iv, xOf, range, col)).join("");
+        const zlbl = `<span style="${lblBase}color:#cbd5e1;padding-left:12px;" title="Zone ${escapeHtml(z)} — manual run">↳ ${swatch(col)}Z${escapeHtml(z)}</span>`;
+        html += track(zlbl, zbars, "rgba(245,158,11,0.05)");
+      }
+    }
+  }
   // Programs (expandable to their zones)
   if (showPrograms) {
     html += section("Programs");
     // Program tags that actually correspond to a real program run somewhere in the log; a zone whose
     // PG tag is NOT here is "orphaned" and gets attributed to a program by time overlap (see zoneRunInProgram).
-    const realProgTags = new Set(runIntervals("program").map(r => r.key));
+    // MANUAL_PROG_TAG is seeded in as a "real" tag so PG=MR zone runs — which name no program — are
+    // left to the Manual Runs section instead of being adopted by whatever program they overlap.
+    const realProgTags = new Set([...runIntervals("program").map(r => r.key), MANUAL_PROG_TAG]);
     const pKeys = sortedKeys(progRuns).filter(k => laneSel.program.has(k));
     if (!pKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected program runs in view.</div>`;
     for (const k of pKeys) {
@@ -657,6 +700,7 @@ function renderSwimlane(range, attempt) {
         if (expandedPrograms.has(p)) expandedPrograms.delete(p); else expandedPrograms.add(p);
         refreshSwimlane(); return;
       }
+      if (ev.target.closest(".lane-label[data-manual]")) { expandedManual = !expandedManual; refreshSwimlane(); return; }
       const mark = ev.target.closest(".alert-mark[data-tsms]");
       if (mark) { jumpTo(Number(mark.getAttribute("data-tsms"))); return; }
       const bar = ev.target.closest(".tl-bar[data-runstart]");
@@ -867,6 +911,16 @@ function visibleRunsAt() {
   if (laneSel.mainline.size) for (const iv of runIntervals("mainline")) if (laneSel.mainline.has(iv.key)) out.push({ ...iv, group: "Mainline", color: categoryColor("Mainline " + iv.key) });
   if (laneSel.program.size) for (const iv of runIntervals("program")) if (laneSel.program.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Program", color: categoryColor("Program " + iv.key) });
   if (laneSel.zone.size) for (const iv of runIntervals("zone")) if (laneSel.zone.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Zone", color: zoneColor(iv.key) });
+  // Mirror the swimlane's Manual Runs section: manual zone runs are listed whatever the Zones dropdown
+  // says, so the panel can answer "what was running by hand here?" on a fresh load. Dedupe against the
+  // pass above — a zone can be selected AND manual, and the panel must list that run once.
+  if (showManual) {
+    const seen = new Set(out.map(iv => iv.group + "|" + iv.key + "|" + iv.start));
+    for (const iv of runIntervals("zone")) {
+      if (!iv.manual || seen.has("Zone|" + iv.key + "|" + iv.start)) continue;
+      out.push({ ...iv, group: "Zone", color: zoneColor(iv.key) });
+    }
+  }
   visRunsCache = out; visRunsKey = key;
   return out;
 }
@@ -913,10 +967,14 @@ function updateScrubPanel() {
     ? active.map(iv => {
         // is the playhead inside a soak gap of this run? (then it's mid-cycle, not actively watering)
         const soaking = soakSplit && iv.segments && !!(iv.segments.find(s => s.s <= t && t < s.e) || {}).soak;
-        const tag = soaking ? " · soaking" : iv.kind === "run-terminated" ? " · stopped early" : iv.manual ? " · manual" : "";
-        const tagWhy = soaking ? "Between watering cycles (soaking — valve off). " :
-          iv.kind === "run-terminated" ? "Ended early on a pause/disable/alarm. " :
-          iv.manual ? "Started by a person, not the schedule. " : "";
+        // How it started and how it ended are independent facts, so compose the tags rather than
+        // letting one win: a hand-started run killed by an alarm is "· stopped early · manual", and
+        // used to read as merely stopped early. (barHTML already composes these on the bar itself.)
+        const tags = [], whys = [];
+        if (soaking) { tags.push(" · soaking"); whys.push("Between watering cycles (soaking — valve off). "); }
+        if (iv.kind === "run-terminated") { tags.push(" · stopped early"); whys.push("Ended early on a pause/disable/alarm. "); }
+        if (iv.manual) { tags.push(" · manual"); whys.push("Started by a person, not the schedule. "); }
+        const tag = tags.join(""), tagWhy = whys.join("");
         const rowTitle = `${tagWhy}Click to move the scrubber to this run's start, flash its bar, and open it in the audit feed.`;
         return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="${escapeHtml(rowTitle)}">
         <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking)}<span class="text-slate-200">${iv.group} ${escapeHtml(iv.key)}</span>
@@ -1108,7 +1166,7 @@ $("resetBtn").addEventListener("click", () => {
   $("flowValue").textContent = "0";
   $("varMin").value = 0; $("varMinVal").textContent = "0%";
   $("varMax").value = 100; $("varMaxVal").textContent = "100%";
-  zoomStack = []; expandedPrograms.clear();
+  zoomStack = []; expandedPrograms.clear(); expandedManual = true;
   // clear the audit-feed search box + column sort back to the pinned-alarms default
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
   locatedRun = null; locatedTs = null; // drop the sticky "located on timeline" highlight
@@ -1491,8 +1549,9 @@ function buildGuide() {
 
     sec("Getting started", `<div class="space-y-3">
       ${step(1, "Load your log", `Drag a <span class="font-mono text-sky-300">.csv</span> onto the <b>Data Source</b> box (top-left) or click it to browse. The dashboard fills in instantly.`)}
-      ${step(2, "Read the timeline", `The <b>Execution Timeline</b> shows one bar per run, grouped into lanes for programs, zones and mainlines.
+      ${step(2, "Read the timeline", `The <b>Execution Timeline</b> shows one bar per run, grouped into lanes for mainlines, manual runs, programs and zones.
         Bar colors: ${swatch("#22c55e")} scheduled &nbsp; ${swatch("#f59e0b")} manual (amber border + “M”) &nbsp; ${swatch("#ef4444")} stopped early by a pause/alarm.
+        The <b>Manual Runs</b> (<span class="font-mono">MR</span>) lane gathers every run a person started, whether or not you've picked its zone in the <b>Zones</b> dropdown — click the label to show or hide the individual zones.
         A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list.
         A <b>cycle-and-soak</b> zone shows solid watering segments with dimmed/striped <b>soak</b> gaps between them (toggle <b>Soak</b> off to see it as one continuous bar). <b>Click any bar</b> to jump the Activity Audit Feed to that run’s raw start line (it scrolls, expands and flashes it).`)}
       ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span — it also shows a small amber marker mirroring the scrubber's position) or the <b>Window</b> presets
@@ -1511,9 +1570,9 @@ function buildGuide() {
 
     sec("Filters (left sidebar)", li([
       `<b>Date / Time Range</b> — limit everything to a From–To window.`,
-      `<b>Show on timeline</b> — pick which <b>Programs</b>, <b>Zones</b> and <b>Mainlines</b> get their own lanes (zones start empty — choose the ones you care about).`,
-      `<b>Run type</b> — show/hide ${swatch("#22c55e")} scheduled and ${swatch("#f59e0b")} manual runs; <b>Alert markers</b> toggles the ${swatch("#ef4444")} alarm ticks.`,
-      `<b>Human audit only</b> — keep just the events a <i>person</i> triggered (User / Operator / Programmer / Administrator) and hide everything the controller did on its own: a “who touched this?” view. Note this filters the <i>events</i> and Audit Feed, not the run bars — it won't isolate manual runs, because a run's stop event is controller-generated and gets hidden. To see manual runs on the timeline, use <b>Run type → ${swatch("#f59e0b")} Manual</b> instead.`,
+      `<b>Show on timeline</b> — pick which <b>Programs</b>, <b>Zones</b> and <b>Mainlines</b> get their own lanes (zones start empty — choose the ones you care about; you don't need them to see manual runs).`,
+      `<b>Run type</b> — show/hide ${swatch("#22c55e")} scheduled and ${swatch("#f59e0b")} manual runs. <b>Manual</b> also toggles the timeline's <b>Manual Runs</b> lane. <b>Alert markers</b> toggles the ${swatch("#ef4444")} alarm ticks.`,
+      `<b>Human audit only</b> — keep just the events a <i>person</i> triggered (User / Operator / Programmer / Administrator) and hide everything the controller did on its own: a “who touched this?” view. Note this filters the <i>events</i> and Audit Feed, not the run bars — it won't isolate manual runs, because a run's stop event is controller-generated and gets hidden. Manual runs already have their own <b>Manual Runs</b> lane on the timeline.`,
       `<b>SubStation</b> — isolate one substation.`,
       `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
       `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,

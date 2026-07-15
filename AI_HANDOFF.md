@@ -76,12 +76,12 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-07-14)
+## Current state (as of 2026-07-15)
 
-- **Version:** 1.0.0. **Branch:** `main` (tip `f9b5d37` + the uncommitted feed→timeline jump work below).
+- **Version:** 1.0.0. **Branch:** `main` (tip `679a3a0` + the Manual Runs lane work below).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
 - **Tested:** the pure data logic (`parse`/`runs`/`format`/`classify`), the `errors.js` ring buffer, and
-  the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **104 tests**.
+  the feedback-report privacy invariant (`tests/feedback.test.js`) are covered by Vitest — **111 tests**.
   The DOM render pipeline, swimlane/scrubber wiring, and PDF export are **not** automated — verify those
   in a browser.
 - **Performance:** initial index JS ≈244 kB (gzip ≈86 kB). **PDF export is native browser print** now
@@ -92,7 +92,33 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ## Last session (most recent first)
 
-1. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
+1. **Manual runs got their own timeline lane** — prompted by a live demo where the **At Playhead** panel
+   "didn't show all of the things that were happening manually". Not a classifier bug: **manual runs are
+   zone runs** (`ZN,MR,SY,ZN=12,PG=MR`) and the Zones dropdown starts **empty** (a deliberate default —
+   104 zones in `testmanual.csv`), so `visibleRunsAt` skipped them entirely and the panel listed only
+   "Mainline 1". `Run type → 🟧 Manual` had nothing to act on: *every* manual run in that log is a zone run
+   (0 program-level; 87 of 104 zones have one). The pieces:
+   - **New Manual Runs section** in `renderSwimlane`, between Mainlines and Programs — the only lane group
+     not driven by a dropdown. Shows manual zone runs whatever `laneSel.zone` says, gated by `showManual`,
+     hidden when the window has none. Parent `MR` track = `mergeSpans(manualRuns)` (new pure fn in
+     `runs.js`, 7 unit tests): a **derived** envelope, deliberately not built from the controller's
+     `MR,SR`→`MR,SP` rows so it can't disagree with its children and works on logs with no `MR` category
+     rows. Label toggles `expandedManual` (default true). See NOTES.md → Swimlane.
+   - **`visibleRunsAt` mirrors it** (deduped by `group|key|start`), so the panel lists `Zone 12 · manual`
+     on a fresh load. Its tags now **compose** — `· stopped early · manual` — instead of a ternary chain
+     where `run-terminated` shadowed `manual`. `barHTML` already did this right; only the panel was wrong.
+   - **Three adjacent bugs found while in there.** (a) `zoneRunsAll` — the rows under an *expanded program*
+     — skipped the run-type filter, so unchecking Manual/Scheduled left them on screen and `statRuns`
+     disagreed. (b) `PG=MR` was swept into the Programs dropdown as a checked-by-default "Program MR" lane
+     that could only render empty. (c) Worst: `realProgTags` didn't know about `MR`, so orphan→overlap
+     attribution adopted manual runs into whatever program was running — **111 of 273** on `testmanual.csv`.
+     All three fixed via the new `MANUAL_PROG_TAG` constant.
+   - **Verified in Chrome (DevTools MCP)** on `testmanual.csv` and `Evnt_202606.csv` (73k, whose manual runs
+     carry *no* `PG=` tag — a useful second shape): section present on load with Zones "None"; panel lists
+     the manual zones; Manual checkbox drives both; dedupe holds; `statRuns` matches the screen; a full
+     toggle round-trip is 35 ms at 73k; console clean. 111 tests green, build clean.
+
+2. **Feed → timeline jumps now scroll the page up and leave a sticky highlight** — prompted by a live demo
    where clicking a feed row's **↗ timeline** "wouldn't scroll me back up" and looked like it did nothing.
    Root cause: `locateOnTimeline` moved the playhead and pulsed the bar (1.3s `.tl-hit`) but **never scrolled
    the window** — the feed sits below the timeline, so the whole effect fired off-screen and expired. The

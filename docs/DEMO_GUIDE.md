@@ -61,8 +61,11 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 1. Open the live URL. Show the empty **Data Source** drop zone.
 2. **Drag `Evnt_flow_test.csv` onto it.** The whole dashboard fills in instantly.
    - **Say:** *"That's the entire day parsed in the browser — nothing was uploaded anywhere."*
-3. Point at the **Execution Timeline** swimlane: bars grouped into lanes for programs, zones, mainlines.
+3. Point at the **Execution Timeline** swimlane: bars grouped into lanes for mainlines, manual runs,
+   programs, zones.
    - 🟩 green = scheduled, 🟧 amber (+ "M" badge) = manual, 🟥 red/hatched = stopped early.
+   - The **Manual Runs** (`MR`) lane is there on load, showing every hand-started run without you having
+     to pick any zones. **Say:** *"Anything a person did by hand is called out on its own line."*
 
 ### Act 2 — "Read a run" (2 min)
 4. **Click a bar** → the Activity Audit Feed jumps to that run's raw start line and flashes it.
@@ -75,7 +78,11 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 6. Make sure **Scrubber** is on; **drag the playhead** across the timeline — an amber marker on the minimap
    mirrors its position live.
 7. The **"At Playhead"** panel (right side) lists exactly what was running at that instant — programs,
-   zones, mainlines, and any active alerts.
+   zones, mainlines, and any active alerts. Anything a person started is tagged **"· manual"**; a run
+   that was also killed early reads **"· stopped early · manual"**.
+   - Park the playhead inside a **Manual Runs** bar → the panel names the zone someone was hand-watering.
+     **Say:** *"You don't have to go looking for manual runs — drop the scrubber anywhere and the panel
+     tells you who was doing what."*
 8. **Click an item in that panel** → the scrubber snaps onto that run, its bar **flashes** on the
    timeline, and the Activity Audit Feed opens its raw log line.
    - **Say:** *"So you can go from 'what was running' straight to the exact raw evidence — on the
@@ -140,11 +147,14 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 ## 5. Feature checklist (everything you can point at)
 
 - **Drag-and-drop CSV load**, fully client-side.
-- **Execution Timeline swimlane** — programs / zones / mainlines, one bar per run.
+- **Execution Timeline swimlane** — mainlines / manual runs / programs / zones, one bar per run.
 - **Run classification** — scheduled (green) vs. manual (amber + "M") vs. stopped-early (red/hatched).
+- **Manual Runs lane** — every hand-started run on its own line, shown by default and independent of the
+  Zones picker (manual runs are zone runs, and zones start unselected). Expand it for the per-zone rows.
 - **Cycle-and-soak splitting** (Soak toggle) + **no-DONE end inference**.
 - **Minimap + window presets + zoom/back + arrow-key stepping.**
-- **Scrubber** with live "At Playhead" panel; click an item to snap the playhead, flash the run bar, and open the feed row.
+- **Scrubber** with live "At Playhead" panel — tags each run "· manual" / "· stopped early" / "· soaking";
+  click an item to snap the playhead, flash the run bar, and open the feed row.
 - **Flow / pressure chart** (Flow toggle) — actual vs. expected.
 - **Interventions & Alerts lane** (Events toggle) with decoded "why" reasons.
 - **Activity Audit Feed** — the whole log (not just the window), searchable, sortable by any column,

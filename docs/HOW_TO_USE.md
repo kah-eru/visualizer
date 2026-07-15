@@ -14,10 +14,13 @@ The same walkthrough is available inside the app — click **How to use** in the
 1. **Load your log.** Drag a `.csv` onto the **Data Source** box (top-left of the sidebar), or click it
    to browse. The dashboard fills in instantly.
 2. **Read the timeline.** The **Execution Timeline** shows one bar per run, grouped into lanes for
-   programs, zones, and mainlines. Bar colors:
+   mainlines, **manual runs**, programs, and zones. Bar colors:
    - 🟩 **green** — scheduled run
    - 🟧 **amber** (amber border + an “M” badge) — manual run
    - 🟥 **red** — stopped early by a pause or alarm
+   - The **Manual Runs** (`MR`) lane gathers every run a person started, **whether or not you’ve picked
+     its zone** in the Zones dropdown — most manual runs are zone runs, and zones start unselected, so
+     this is where you’ll find them. Click the `MR` label to show or hide the individual zones.
    - A **hatched bar marked “ended early”** started but never logged a finish (`DN`), so its end is
      **inferred from the controller’s run-list** rather than shown running to the end of the log.
    - A **cycle-and-soak** zone shows solid watering segments with **dimmed/striped soak** gaps between
@@ -70,13 +73,15 @@ The same walkthrough is available inside the app — click **How to use** in the
 
 - **Date / Time Range** — limit everything to a From–To window.
 - **Show on timeline** — choose which **Programs**, **Zones**, and **Mainlines** get their own lanes.
-  (Zones start empty — pick the ones you care about.)
-- **Run type** — show/hide 🟩 scheduled and 🟧 manual runs; **Alert markers** toggles the 🟥 alarm ticks.
+  (Zones start empty — pick the ones you care about. You don’t need them to see manual runs: those get
+  their own **Manual Runs** lane.)
+- **Run type** — show/hide 🟩 scheduled and 🟧 manual runs. **Manual** also shows/hides the timeline’s
+  **Manual Runs** lane. **Alert markers** toggles the 🟥 alarm ticks.
 - **Human audit only** — keep just the events a *person* triggered (User / Operator / Programmer /
   Administrator) and hide everything the controller did on its own — a “who touched this?” view.
   Note this filters the *events* and Audit Feed, **not** the run bars: it won't isolate manual runs,
-  because a run's stop event is controller-generated and gets hidden. To see manual runs on the
-  timeline, use **Run type → 🟧 Manual** instead.
+  because a run's stop event is controller-generated and gets hidden. Manual runs already have their
+  own **Manual Runs** lane on the timeline.
 - **SubStation** — isolate a single substation.
 - **Flow Variance |AC−EX| %** — appears when the file has flow telemetry; filter to events whose
   commanded vs. expected flow differ by a chosen range.

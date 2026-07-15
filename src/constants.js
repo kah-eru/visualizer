@@ -8,6 +8,10 @@ export const TRIGGER_MAP = {AD:"Administrator",BL:"Baseline Commander",BM:"BaseM
 // manual-run classifier (runs.js) and the "Human audit only" filter (app.js) so the two agree.
 export const HUMAN_TRIGGERS = new Set(["US", "OP", "PR", "AD"]);
 
+// The literal PG= tag the controller stamps on a manual zone run (`ZN,MR,SY,ZN=12,PG=MR`) — it names
+// no real program. Shared by the Manual Runs lane and zoneRunInProgram's orphan gating so the two agree.
+export const MANUAL_PROG_TAG = "MR";
+
 export const GPM_TO_LPM = 3.785;   // AC / EX
 export const PSI_TO_KPA = 6.894;   // PR
 export const FLOW_KEYS = new Set(["AC","EX"]);

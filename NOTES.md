@@ -286,6 +286,30 @@ index.html
   "is this a person?" is answered identically in both places. Zone/mainline bars use a per-key color with a status hatch overlay.
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).
   Default: programs & mainlines **all**, zones **none**. Programs are expandable to their zones (click the label).
+- **Manual Runs lane** (section between Mainlines and Programs) — the one lane group *not* driven by a
+  dropdown. It exists because **manual runs are zone runs** (`ZN,MR,SY,ZN=12,PG=MR`) and zones default to
+  **none**, so before this a fresh load showed *no* manual runs at all on the timeline or in the scrubber
+  panel — the Run type → Manual checkbox had nothing to act on. The section lists
+  `runIntervals("zone").filter(inWin).filter(iv => iv.manual)` regardless of `laneSel.zone`, gated only by
+  `showManual` (and hidden when the window holds no manual runs). Its parent `MR` track draws
+  `mergeSpans(manualRuns)` (pure, `runs.js`) — a **derived** envelope, deliberately *not* built from the
+  controller's `MR,SR`→`MR,SP` session rows, so the parent can never disagree with the child rows and a log
+  that flags runs manual by human trigger alone (no `MR` category rows — e.g. `Evnt_202606.csv`) still gets
+  one. Envelope bars carry **no `data-runstart`**, so the delegated bar-click handler ignores them; the
+  label toggles `expandedManual` (default **true**, reset on new file / Reset Filters). Child rows reuse
+  `zoneBars`, so soak splitting, the M badge and status hatching come free, and keep `data-group="Zone"` so
+  a locate-jump still rings them.
+- `MANUAL_PROG_TAG` (`constants.js` = `"MR"`) is the literal `PG=` tag on a manual zone run — it names no
+  program. Two places consume it: it's filtered out of the **Programs dropdown** (`onDataLoaded`), which
+  otherwise offered a checked-by-default "Program MR" lane that could only ever render empty; and it's
+  **seeded into `realProgTags`** in `renderSwimlane` so `zoneRunInProgram` treats `PG=MR` as a real tag
+  rather than an orphan. Without that seed, orphan→overlap attribution adopted manual runs into whatever
+  program happened to be running (**111 of 273** on `testmanual.csv`), showing hand-started runs as part of
+  a schedule that never ran them.
+- `zoneRunsAll` (the rows under an **expanded program**) is run-type filtered like every other zone run —
+  it wasn't, so unchecking Manual/Scheduled left those rows on screen and `statRuns` disagreed with them.
+  `statRuns` counts the Manual section separately only when Zones is off (otherwise it double-counts: a
+  manual run always passes `runTypeOk` when `showManual`).
 - Each bar: click body → `revealRunStart(findRunStartEvent(group,key,runStart))` — scroll/expand/flash the
   run's raw start row in the feed (no zoom); corner triangles → `panToTime` the run's other edge. Bars carry
   `data-group`/`data-key`/`data-runstart` (the last is the run's true start, so a soak *segment* still resolves).
@@ -305,6 +329,15 @@ index.html
   **Alerts here** (alerts within tolerance). Each alert row shows a second line:
   **where** (Zone/Program/Mainline) **—** **what** (`whyText`). This was a specific user request:
   "show the error like it is but also what zone had the error and what the error was."
+- `visibleRunsAt` **mirrors the Manual Runs lane**: when `showManual`, manual zone runs are appended
+  whatever `laneSel.zone` says, deduped against the lane-selected pass by `group|key|start` (a zone can be
+  both selected *and* manual — the panel must list that run once). Without this the panel couldn't answer
+  "what was running by hand here?" on a fresh load. The derived envelope is deliberately **not** a panel
+  row — it's a timeline affordance, not a run.
+- A run's **tags compose** rather than one winning: `· soaking` / `· stopped early` / `· manual` can all
+  appear, and so can their tooltip sentences. These were a ternary chain, so `run-terminated` shadowed
+  `manual` and a hand-started run killed by an alarm read as merely "stopped early" — the demo bug.
+  `barHTML` already composed them (`note` appends `· manual` outside its chain), so only the panel was wrong.
 - **Panel items "locate on timeline"** (`locateOnTimeline`): every row in the panel is clickable. Clicking a
   **Running now** run resolves it to its raw **start** event (`findRunStartEvent` matches group+key+`start` ms
   in `filtered`); clicking an **alert** row uses its `data-eid`. Either way `locateOnTimeline(ts, target, e)`

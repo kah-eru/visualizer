@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseRow } from "../src/parse.js";
-import { makeRun, buildRunIntervals, zoneRunInProgram } from "../src/runs.js";
+import { makeRun, buildRunIntervals, zoneRunInProgram, mergeSpans } from "../src/runs.js";
 
 const row = (time, cat, act, trg, ...rest) => [`06/17/26 ${time} -0600`, cat, act, trg, ...rest];
 const ms = (time) => parseRow(row(time, "SY", "BT", "SY")).ts.getTime();
@@ -255,5 +255,54 @@ describe("zoneRunInProgram — program↔zone attribution with orphan fallback",
   it("returns false when the tag is a real program elsewhere (no hijacking a legit tag)", () => {
     // PG=1 IS a real program run somewhere, so it is respected — not folded into P3 despite overlap.
     expect(zoneRunInProgram(zoneRun, "3", new Set(["1", "3"]), p3Runs)).toBe(false);
+  });
+});
+
+// The Manual Runs parent track draws one bar per span covering the manual zone runs beneath it, so a
+// child can never poke outside its parent and the parent needs no MR,SR/MR,SP session rows to exist.
+describe("mergeSpans", () => {
+  const run = (key, start, end) => ({ key, start, end });
+
+  it("keeps disjoint runs separate, one span each, in start order", () => {
+    expect(mergeSpans([run("50", 300, 400), run("12", 100, 200)])).toEqual([
+      { start: 100, end: 200, keys: ["12"] },
+      { start: 300, end: 400, keys: ["50"] },
+    ]);
+  });
+
+  it("merges overlapping runs into one span and collects both zones", () => {
+    expect(mergeSpans([run("87", 100, 300), run("88", 200, 400)])).toEqual([
+      { start: 100, end: 400, keys: ["87", "88"] },
+    ]);
+  });
+
+  it("merges abutting runs — back-to-back hand-watering reads as one stretch", () => {
+    expect(mergeSpans([run("12", 100, 200), run("50", 200, 300)])).toEqual([
+      { start: 100, end: 300, keys: ["12", "50"] },
+    ]);
+  });
+
+  it("keeps a nested run inside its container without shortening the span", () => {
+    expect(mergeSpans([run("12", 100, 500), run("50", 200, 300)])).toEqual([
+      { start: 100, end: 500, keys: ["12", "50"] },
+    ]);
+  });
+
+  it("dedupes keys when the same zone runs twice within one span", () => {
+    expect(mergeSpans([run("12", 100, 200), run("12", 150, 300)])).toEqual([
+      { start: 100, end: 300, keys: ["12"] },
+    ]);
+  });
+
+  it("handles the single-run and empty cases", () => {
+    expect(mergeSpans([run("12", 100, 200)])).toEqual([{ start: 100, end: 200, keys: ["12"] }]);
+    expect(mergeSpans([])).toEqual([]);
+  });
+
+  it("does not mutate or reorder the caller's array", () => {
+    const runs = [run("50", 300, 400), run("12", 100, 200)];
+    mergeSpans(runs);
+    expect(runs.map(r => r.key)).toEqual(["50", "12"]);
+    expect(runs[0]).toEqual({ key: "50", start: 300, end: 400 });
   });
 });
