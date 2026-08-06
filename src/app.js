@@ -272,6 +272,7 @@ function readFilterOpts() {
 
 function applyFilters() {
   filtered = filterEvents(allEvents, readFilterOpts());
+  feedLimit = FEED_CAP;
 
   // run intervals depend only on `filtered` → recompute their cache key and clear the memo
   runCache = {};
@@ -403,6 +404,7 @@ let revealedFeedIds = new Set();
 // feedSortCol null = default order (alarms pinned, then chronological); set = sort by that column.
 let feedQuery = "", feedSortCol = null, feedSortDir = "asc";
 let lastFeedSig = null; // content signature of the last feed render, to preserve scroll on view-only moves
+let feedLimit = FEED_CAP;
 // A run bar to flash on the next swimlane render (set by a "locate on timeline" jump). {group,key,ts}.
 let pendingBarHighlight = null;
 // The last located run + time. Unlike pendingBarHighlight (a one-shot arrival pulse) these are sticky:
@@ -1138,21 +1140,36 @@ function renderFeed() {
   // Content signature: when the rows are unchanged across pan / nav / scrubber re-renders, the DOM
   // (including any expanded rows and the scroll position) is already correct — skip the whole rebuild.
   // applyFilters sets lastFeedSig=null so any filter change forces a rebuild even at equal length.
-  const sig = `${feedQuery}${feedSortCol}${feedSortDir}${filtered.length}${revealedFeedIds.size}`;
+  const sig = `${feedQuery}\u0001${feedSortCol}\u0001${feedSortDir}\u0001${filtered.length}\u0001${revealedFeedIds.size}\u0001${feedLimit}`;
   if (lastFeedSig !== null && sig === lastFeedSig) return; // rows unchanged → skip selectFeedRows + DOM rebuild
   lastFeedSig = sig;
   const ordered = selectFeedRows(filtered, { query: feedQuery, sortCol: feedSortCol, sortDir: feedSortDir, revealedIds: revealedFeedIds });
   const alertCount = ordered.reduce((n, e) => n + (e.isAlert ? 1 : 0), 0);
-  const shown = ordered.slice(0, FEED_CAP);
-  // make sure a revealed row survives the cap so the jump can find it
-  for (const e of ordered.slice(FEED_CAP)) if (revealedFeedIds.has(e._id)) shown.push(e);
+  const shown = ordered.slice(0, feedLimit);
+  // make sure a revealed row survives the visible prefix so the jump can find it
+  for (const e of ordered.slice(feedLimit)) if (revealedFeedIds.has(e._id)) shown.push(e);
+  const total = ordered.length;
+  const remaining = Math.max(0, total - feedLimit);
+  const next = Math.min(FEED_CAP, remaining);
+  const more = remaining
+    ? `<div class="px-4 py-3 text-center border-t border-slate-800"><button type="button" class="feed-load-more bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 text-xs font-semibold px-4 py-2 rounded-md">Load ${next.toLocaleString()} more <span class="text-slate-500">(${remaining.toLocaleString()} remaining)</span></button></div>`
+    : "";
   host.innerHTML = shown.length
-    ? shown.map((e, idx) => feedRowHTML(e, idx)).join("")
+    ? shown.map((e, idx) => feedRowHTML(e, idx)).join("") + more
     : `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events loaded."}</div>`;
   // One delegated listener (attached once) instead of re-binding every row on each render.
   if (!host._delegated) {
     host._delegated = true;
     host.addEventListener("click", ev => {
+      const more = ev.target.closest(".feed-load-more");
+      if (more) {
+        const box = $("feedScroll");
+        const top = box.scrollTop;
+        feedLimit += FEED_CAP;
+        renderFeed();
+        box.scrollTop = top;
+        return;
+      }
       const jump = ev.target.closest(".feed-jump[data-tsms]");
       if (jump) {
         ev.stopPropagation();
@@ -1169,12 +1186,10 @@ function renderFeed() {
     });
   }
   updateFeedHead();
-  const total = ordered.length;
-  $("feedInfo").textContent = searching
-    ? `${total > FEED_CAP ? `First ${FEED_CAP.toLocaleString()} of ` : ""}${total.toLocaleString()} match${total === 1 ? "" : "es"} across all events${alertCount ? ` · ${alertCount} alerts` : ""}`
-    : total > FEED_CAP
-      ? `Showing first ${FEED_CAP.toLocaleString()} of ${total.toLocaleString()} (${alertCount} alerts)`
-      : `${total.toLocaleString()} events${alertCount ? ` · ${alertCount} alerts` : ""}`;
+  const noun = searching ? `match${total === 1 ? "" : "es"}` : `event${total === 1 ? "" : "s"}`;
+  $("feedInfo").textContent = total
+    ? `Showing ${shown.length.toLocaleString()} of ${total.toLocaleString()} ${noun}${alertCount ? ` · ${alertCount} alerts` : ""}`
+    : searching ? "0 matches across all events" : "0 events";
 }
 // Reflect the active sort column/direction on the clickable header (arrow + highlight).
 function updateFeedHead() {
@@ -1212,7 +1227,11 @@ let feedSearchTimer = null;
 $("feedSearch").addEventListener("input", e => {
   const v = e.target.value.trim();
   clearTimeout(feedSearchTimer);
-  feedSearchTimer = setTimeout(() => { feedQuery = v; refreshFeed(); }, 150);
+  feedSearchTimer = setTimeout(() => {
+    feedQuery = v;
+    feedLimit = FEED_CAP;
+    refreshFeed();
+  }, 150);
 });
 // Clickable column headers cycle asc → desc → off (back to the pinned-alarms default); a new column
 // starts ascending.
@@ -1223,6 +1242,7 @@ $("feedHead").addEventListener("click", e => {
   if (feedSortCol !== col) { feedSortCol = col; feedSortDir = "asc"; }
   else if (feedSortDir === "asc") feedSortDir = "desc";
   else { feedSortCol = null; feedSortDir = "asc"; }
+  feedLimit = FEED_CAP;
   refreshFeed();
 });
 

@@ -1,12 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 
-// Whole-app smoke test: load the built page, drop a CSV in, and assert the app actually rendered.
-//
-// This is deliberately ONE test, not a suite. Its job is to catch whole-app breakage that no unit
-// test can see — a broken import, a Chart.js/PapaParse upgrade, a render path that throws — at low
-// maintenance cost. The pure logic is covered far better and far faster by the Vitest suite; adding
-// interaction tests here trades a lot of flake for little that Node tests can't already pin.
+// Whole-app checks for DOM behavior that the faster pure-logic Vitest suite cannot cover.
 //
 // The fixture is Evnt_flow_test.csv because it is the only log committed to the repo: the real
 // controller logs are gitignored for privacy, so CI has no others to reach for.
@@ -77,4 +72,33 @@ test("shows no-runtime zones and opens their blocking event", async ({ page }) =
 
   await page.locator('.lane-label[data-prog="1"]').click();
   await expect(page.locator('.program-zone-lane-label[data-program="1"][data-zone="10"]')).toBeVisible();
+});
+
+test("loads every feed event in progressive batches", async ({ page }) => {
+  const rows = Array.from({ length: 1501 }, (_, i) => {
+    const mm = String(Math.floor(i / 60)).padStart(2, "0");
+    const ss = String(i % 60).padStart(2, "0");
+    return `06/17/26 08:${mm}:${ss},SY,BT,SY,TX=Feed event ${i}`;
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("#fileInput", {
+    name: "large-feed.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(rows.join("\n")),
+  });
+
+  await expect(page.locator(".feed-row")).toHaveCount(1500);
+  await expect(page.locator("#feedInfo")).toContainText("1,500 of 1,501");
+  await expect(page.getByText("Feed event 1500", { exact: true })).toHaveCount(0);
+  await page.locator(".feed-load-more").click();
+  await expect(page.locator(".feed-row")).toHaveCount(1501);
+  await expect(page.getByText("Feed event 1500", { exact: true })).toHaveCount(1);
+  await expect(page.locator(".feed-load-more")).toHaveCount(0);
+
+  await page.locator("#feedSearch").fill("Feed event");
+  await expect(page.locator(".feed-row")).toHaveCount(1500);
+  await page.locator(".feed-load-more").click();
+  await page.locator('.feed-sort[data-col="date"]').click();
+  await expect(page.locator(".feed-row")).toHaveCount(1500);
 });
