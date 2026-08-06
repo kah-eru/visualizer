@@ -61,6 +61,7 @@ let windowUnit = "day"; // active window unit: second|minute|hour|day|week|month
 // which lanes show on the timeline (checklist dropdowns). empty set = group hidden.
 const laneSel = { program: new Set(), zone: new Set(), mainline: new Set() };
 const laneAll = { program: [], zone: [], mainline: [] }; // full key lists per group
+let programZones = new Map(); // explicit PG= + ZN= links found anywhere in the loaded CSV
 
 /* ============================ Shared helpers ============================ */
 const $ = document.getElementById.bind(document);
@@ -73,6 +74,8 @@ const gridLinesHTML = (xScale, rgba, z) => `<div style="position:absolute;inset:
   (xScale.getTicks ? xScale.getTicks() : []).map(t => `<div style="position:absolute;top:0;bottom:0;left:${xScale.getPixelForValue(t.value)}px;width:1px;background:${rgba};"></div>`).join("") + `</div>`;
 // sticky lane-label base style (left gutter), parameterized by row height + width
 const laneLabelStyle = (h, w) => `position:sticky;left:0;z-index:2;display:inline-flex;align-items:center;height:${h}px;width:${w}px;font-size:10px;background:#0f172a;`;
+const ZONE_BLOCK_ACTIONS = new Set(["PA", "DS", "SK", "DR", "CE"]);
+const isZoneBlocker = e => e.isAlert || ZONE_BLOCK_ACTIONS.has(e.actCode);
 
 /* ============================ Detail rendering (with hover help) ============================ */
 function keyTooltip(k) {
@@ -186,6 +189,14 @@ function onDataLoaded() {
     return;
   }
   inferEffectivePrograms(allEvents);
+  programZones = new Map();
+  for (const e of allEvents) {
+    if (e.program == null || String(e.program) === MANUAL_PROG_TAG || !e.zones.length) continue;
+    const key = String(e.program);
+    const zones = programZones.get(key) || new Set();
+    for (const z of e.zones) zones.add(String(z));
+    programZones.set(key, zones);
+  }
 
   // range bounds (reduce avoids call-stack limits of spread on large arrays)
   let minT = Infinity, maxT = -Infinity;
@@ -556,6 +567,25 @@ function renderSwimlane(range, attempt) {
   const runTypeOk = iv => (iv.manual ? showManual : showScheduled);
   const groupsOn = [showPrograms, showZones, showMainlines].filter(Boolean).length;
 
+  const blockersByZone = new Map();
+  for (const e of filtered) {
+    const t = e.ts.getTime();
+    if (!isZoneBlocker(e) || t < range.start || t >= range.end) continue;
+    for (const z of e.zones) {
+      const key = String(z);
+      const list = blockersByZone.get(key) || [];
+      list.push(e);
+      blockersByZone.set(key, list);
+    }
+  }
+  const blockerMarks = (zone, program = null) => (blockersByZone.get(String(zone)) || [])
+    .filter(e => program == null || String(e.progEff) === String(program))
+    .map(e => {
+      const group = eventGroupOf(e);
+      const title = `${fmtTime(e.ts.getTime(), range.end - range.start)} — Zone ${zone} — ${e.action}: ${whyText(e)}`;
+      return `<button type="button" class="zone-block-mark" data-eid="${e._id}" data-zone="${escapeHtml(zone)}" aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}" style="left:${xOf(e.ts.getTime())}px;background:${group.color};"></button>`;
+    }).join("");
+
   const lblW = Math.max(40, area.left);
   const lblBase = laneLabelStyle(SWIM_ROW_H, lblW);
   const swatch = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;background:${c}"></span>`;
@@ -639,13 +669,15 @@ function renderSwimlane(range, attempt) {
       html += track(lbl, bars);
       if (expanded) {
         const inProg = z => zoneRunInProgram(z, k, realProgTags, progByKey.get(k) || []);
-        const zKeys = sortedKeys(zoneRunsAll.filter(inProg));
+        const runKeys = sortedKeys(zoneRunsAll.filter(inProg));
+        const linkedKeys = [...(programZones.get(String(k)) || [])];
+        const zKeys = [...new Set([...runKeys, ...linkedKeys])].sort(numCmp);
         if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1" style="padding-left:${lblW + 6}px">No zone runs recorded for this program in view.</div>`;
         for (const z of zKeys) {
           const col = zoneColor(z);
           const zbars = (zoneAllByKey.get(z) || []).filter(inProg).map(iv => zoneBars(iv, xOf, range, col)).join("");
-          const zlbl = `<span style="${lblBase}color:#cbd5e1;padding-left:12px;" title="Zone ${escapeHtml(z)} in Program ${escapeHtml(k)}">↳ ${swatch(col)}Z${escapeHtml(z)}</span>`;
-          html += track(zlbl, zbars, "rgba(148,163,184,0.04)");
+          const zlbl = `<span class="program-zone-lane-label" data-program="${escapeHtml(k)}" data-zone="${escapeHtml(z)}" style="${lblBase}color:#cbd5e1;padding-left:12px;" title="Zone ${escapeHtml(z)} in Program ${escapeHtml(k)}">↳ ${swatch(col)}Z${escapeHtml(z)}</span>`;
+          html += track(zlbl, zbars + blockerMarks(z, k), "rgba(148,163,184,0.04)");
         }
       }
     }
@@ -653,12 +685,13 @@ function renderSwimlane(range, attempt) {
   // Zones
   if (showZones) {
     html += section("Zones");
-    const zKeys = sortedKeys(zoneRuns).filter(k => laneSel.zone.has(k));
-    if (!zKeys.length) html += `<div class="text-[10px] text-slate-500 pb-1 pl-1">No selected zone runs in view.</div>`;
+    const zKeys = laneAll.zone.filter(k => laneSel.zone.has(k));
     for (const k of zKeys) {
       const col = zoneColor(k);
-      const bars = (zoneByKey.get(k) || []).map(iv => zoneBars(iv, xOf, range, col)).join("");
-      html += track(`<span style="color:#cbd5e1;${lblBase}" title="Zone ${escapeHtml(k)}">${swatch(col)}Z${escapeHtml(k)}</span>`, bars);
+      const runs = zoneByKey.get(k) || [];
+      const title = runs.length ? `Zone ${k}` : `Zone ${k} — no runtime in this window`;
+      const label = `<span class="zone-lane-label" data-zone="${escapeHtml(k)}" style="color:#cbd5e1;${lblBase}" title="${escapeHtml(title)}">${swatch(col)}Z${escapeHtml(k)}</span>`;
+      html += track(label, runs.map(iv => zoneBars(iv, xOf, range, col)).join("") + blockerMarks(k));
     }
   }
   if (!groupsOn) html += `<div class="text-xs text-slate-500 py-3 pl-1">Nothing selected — pick Programs, Zones, or Mainlines from the dropdowns in the sidebar.</div>`;
@@ -681,6 +714,12 @@ function renderSwimlane(range, attempt) {
   if (!lane._delegated) {
     lane._delegated = true;
     lane.addEventListener("click", ev => {
+      const blocker = ev.target.closest(".zone-block-mark[data-eid]");
+      if (blocker) {
+        ev.stopPropagation();
+        revealFeedEvent(allEvents[Number(blocker.getAttribute("data-eid"))]);
+        return;
+      }
       const jump = ev.target.closest(".tl-jump[data-to]");
       if (jump) { ev.stopPropagation(); panToTime(Number(jump.getAttribute("data-to"))); return; }
       const label = ev.target.closest(".lane-label[data-prog]");
@@ -823,6 +862,15 @@ function flashFeedRow(row) {
 // scroll the audit feed to the event at `ts`, expand and flash it
 function focusFeedEvent(ts) {
   const row = $("auditFeed").querySelector(`.feed-row[data-tsms="${ts}"]`);
+  if (row) flashFeedRow(row);
+}
+function revealFeedEvent(e) {
+  if (!e) return;
+  revealedFeedIds.add(e._id);
+  lastFeedSig = null;
+  renderFeed();
+  scrollPageTo($("feedScroll"), "nearest");
+  const row = $("auditFeed").querySelector(`.feed-row[data-eid="${e._id}"]`);
   if (row) flashFeedRow(row);
 }
 // Jump to a specific run's start event from the "Running now" panel. Its raw row is normally hidden
@@ -1292,7 +1340,7 @@ $("soakSplitOn").addEventListener("change", e => { soakSplit = e.target.checked;
 let scrubbing = false;
 timeWrap.addEventListener("pointerdown", e => {
   if (!playheadOn) return;
-  if (e.target.closest(".tl-bar, .alert-mark, .lane-label")) return; // let bar/alert/label clicks work
+  if (e.target.closest(".tl-bar, .alert-mark, .lane-label, .zone-block-mark")) return; // let timeline controls handle clicks
   e.preventDefault(); // don't start a text selection while dragging the playhead
   scrubbing = true; timeWrap.setPointerCapture(e.pointerId);
   const t = timeAtClientX(e.clientX); if (t != null) setPlayhead(snapTime(t));

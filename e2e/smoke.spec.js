@@ -44,3 +44,37 @@ test("loads a CSV and renders the timeline, feed, and stats", async ({ page }) =
 
   expect(consoleErrors).toEqual([]);
 });
+
+test("shows no-runtime zones and opens their blocking event", async ({ page }) => {
+  const csv = [
+    "06/17/26 06:00:00,PG,SR,DT,PG=1",
+    "06/17/26 06:00:01,ZN,WT,SY,ZN=2,PG=1",
+    "06/17/26 06:10:00,ZN,DN,SY,ZN=2,PG=1",
+    "06/17/26 06:10:01,PG,DN,SY,PG=1",
+    "06/17/26 06:11:00,PZ,SE,BM,PZ=1,ZN=10,PG=1,KY=RT,NV=300",
+    "06/17/26 06:12:00,ZN,DS,SY,ZN=10",
+  ].join("\n");
+
+  await page.goto("/");
+  await page.setInputFiles("#fileInput", {
+    name: "no-runtime-zone.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv),
+  });
+
+  await page.locator("#ddZoneBtn").click();
+  await page.locator("#ddZonePanel .ddAll").check();
+  await expect(page.locator(".zone-lane-label")).toHaveText(["Z2", "Z10"]);
+
+  const blocker = page.locator('.zone-block-mark[data-zone="10"]');
+  await expect(blocker).toHaveCount(1);
+  await expect(blocker).toHaveAttribute("aria-label", /Zone 10.*Disable/i);
+  await blocker.click();
+  const disableRow = page.locator(".feed-row").filter({ hasText: "Disable" });
+  const detail = page.locator(`[data-fdetail="${await disableRow.getAttribute("data-idx")}"]`);
+  await expect(detail).not.toHaveClass(/hidden/);
+  await expect(detail).toContainText("06/17/26 06:12:00,ZN,DS,SY,ZN=10");
+
+  await page.locator('.lane-label[data-prog="1"]').click();
+  await expect(page.locator('.program-zone-lane-label[data-program="1"][data-zone="10"]')).toBeVisible();
+});
