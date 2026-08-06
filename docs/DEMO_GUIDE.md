@@ -118,7 +118,8 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
     - **Say:** *"Every row that can take you somewhere tells you where it's going — and the ones that
       can't don't pretend."*
     **Search** across the whole log and **click a column header** to sort. Show the sidebar **filters**
-    briefly (Programs/Zones/Mainlines, run type, human-audit-only, flow variance).
+    briefly (Programs/Zones/Mainlines, run type, human-audit-only, flow variance). For a large result,
+    use **Load 1,500 more** to show every matching row progressively.
 14. **Print / Save as PDF** → opens the browser print dialog; choose **Save as PDF** to export the whole
     dashboard as shown (works instantly even on huge logs).
     - **Say:** *"One click to hand a customer or a colleague a shareable audit."*
@@ -158,6 +159,8 @@ stopped early, and why.* Nothing is uploaded — the CSV never leaves the user's
 - **Run classification** — scheduled (green) vs. manual (amber + "M") vs. stopped-early (red/hatched).
 - **Manual Runs lane** — every hand-started run on its own line, shown by default and independent of the
   Zones picker (manual runs are zone runs, and zones start unselected). Expand it for the per-zone rows.
+- **Persistent selected-zone rows** — zones remain visible without runtime; clickable blocker diamonds
+  reveal alarms, pauses, disables, skips/drops, and configuration errors.
 - **Cycle-and-soak splitting** (Soak toggle) + **no-DONE end inference**.
 - **Minimap + window presets + zoom/back + arrow-key stepping.**
 - **Scrubber** with live "At Playhead" panel — tags each run "· manual" / "· stopped early" / "· soaking";
@@ -192,8 +195,8 @@ Baseline controller event logs (`Evnt_yyyyMM.csv` / `Events.csv`). The code glos
 No — it's a static web page (Vite build on GitHub Pages). Works offline once loaded.
 
 **Q: How big a log can it handle?**
-It handles full monthly logs; the audit feed is capped/binned for very large files (not yet
-virtualized — see §7).
+It handles full monthly logs. The audit feed renders 1,500 matching rows at a time; keep using
+**Load 1,500 more** to reach the end without rendering the whole log at once.
 
 **Q: Can we brand it / white-label it / host it ourselves?**
 It's a static bundle, so hosting it elsewhere is trivial. Branding would be a small design task.

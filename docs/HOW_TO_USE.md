@@ -21,6 +21,9 @@ The same walkthrough is available inside the app — click **How to use** in the
    - The **Manual Runs** (`MR`) lane gathers every run a person started, **whether or not you’ve picked
      its zone** in the Zones dropdown — most manual runs are zone runs, and zones start unselected, so
      this is where you’ll find them. Click the `MR` label to show or hide the individual zones.
+   - Selected zones keep a timeline row even when they have no runtime in the current window. Blocking
+     alarms, pauses, disables, skips/drops, and configuration errors appear as clickable diamonds on that
+     zone’s row and open the exact raw feed event.
    - A **hatched bar marked “ended early”** started but never logged a finish (`DN`), so its end is
      **inferred from the controller’s run-list** rather than shown running to the end of the log.
    - A **cycle-and-soak** zone shows solid watering segments with **dimmed/striped soak** gaps between
@@ -66,7 +69,9 @@ The same walkthrough is available inside the app — click **How to use** in the
    they show **no button** rather than a jump that highlights nothing. Use the **search box** to
    find events across the whole log (date, action, zone, program, keyword — space-separated terms all must
    match) and **click any column header** to sort by it (click again to flip, a third click restores the
-   pinned-alarms default). Clicking a **run bar** on the timeline jumps the feed to that run's raw start
+   pinned-alarms default). Search and sort cover the whole matching log. The feed renders the first
+   **1,500 rows** for responsiveness; use **Load 1,500 more** until every matching row is shown. Clicking
+   a **run bar** on the timeline jumps the feed to that run's raw start
    line. **Hover almost any control** — toggles, the stat strip, legend swatches, and sidebar filters — for a tooltip.
 
 ---
@@ -78,7 +83,7 @@ The same walkthrough is available inside the app — click **How to use** in the
 | **Stat strip** | Events in the current window, active alerts, and run count. |
 | **Execution Timeline** | The swimlane of runs + minimap + (optional) flow/pressure chart. |
 | **Interventions & Alerts** | Pauses, disables, status changes, and alarms — with the “why”. (Toggle **Events**.) |
-| **Activity Audit Feed** | Every event in the whole log (independent of the window) — searchable, sortable by any column; alarms pinned on top. |
+| **Activity Audit Feed** | Every event in the whole log (independent of the window) — searchable, sortable by any column, and loaded in 1,500-row batches; alarms pinned on top. |
 
 ---
 
@@ -86,8 +91,9 @@ The same walkthrough is available inside the app — click **How to use** in the
 
 - **Date / Time Range** — limit everything to a From–To window.
 - **Show on timeline** — choose which **Programs**, **Zones**, and **Mainlines** get their own lanes.
-  (Zones start empty — pick the ones you care about. You don’t need them to see manual runs: those get
-  their own **Manual Runs** lane.)
+  (Zones start empty — pick the ones you care about. A selected zone stays visible without runtime and
+  shows any blocker diamonds. You don’t need this picker to see manual runs: those get their own
+  **Manual Runs** lane.)
 - **Run type** — show/hide 🟩 scheduled and 🟧 manual runs. **Manual** also shows/hides the timeline’s
   **Manual Runs** lane. **Alert markers** toggles the 🟥 alarm ticks.
 - **Human audit only** — keep just the events a *person* triggered (User / Operator / Programmer /

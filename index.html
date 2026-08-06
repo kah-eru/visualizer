@@ -60,7 +60,7 @@
             </div>
           </div>
           <div class="ml-dd" data-group="zone">
-            <button id="ddZoneBtn" title="Pick which zones get their own timeline lane. Zones start empty — choose the ones you want to see. You don't need this to see manual runs: they get their own Manual Runs lane." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Zones: <span class="ddSummary text-sky-400">None</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddZoneBtn" title="Pick which zones get their own timeline lane. Selected zones remain visible even without runtime; blocker diamonds open the event that stopped them. Zones start empty. Manual runs also have their own lane." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Zones: <span class="ddSummary text-sky-400">None</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddZonePanel" class="ml-dd-panel hidden">
               <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddZoneList" class="ml-dd-list"></div>
@@ -259,7 +259,7 @@
       <!-- BOTTOM PANE: Activity Audit feed -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
         <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
-          <h3 class="text-sm font-semibold text-slate-200">Activity Audit Feed <span class="text-xs font-normal text-slate-500">— alarms pinned on top; click a row to expand its detail</span></h3>
+          <h3 class="text-sm font-semibold text-slate-200">Activity Audit Feed <span class="text-xs font-normal text-slate-500">— alarms pinned on top; click a row to expand; load more for the full log</span></h3>
           <span id="feedInfo" class="text-xs text-slate-500"></span>
         </div>
         <div class="px-4 py-2 border-b border-slate-800">

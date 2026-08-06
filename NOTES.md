@@ -317,6 +317,11 @@ index.html
   "is this a person?" is answered identically in both places. Zone/mainline bars use a per-key color with a status hatch overlay.
 - Lanes shown are driven by the three **checklist dropdowns** in the sidebar (`laneSel.{program,zone,mainline}`).
   Default: programs & mainlines **all**, zones **none**. Programs are expandable to their zones (click the label).
+- Selected zone row keys come from `laneAll.zone`, not only from run intervals, so a selected zone remains
+  visible without runtime in the current window. Expanded programs union runtime-attributed zones with
+  explicit `PG=` + `ZN=` links collected in `programZones`; membership is never guessed from a zone-only event.
+- Zone blocker markers cover alarms/errors, pause, disable, skip/drop, and configuration error. They reuse
+  `EVENT_GROUPS` colors and reveal the exact raw event in the audit feed.
 - **Manual Runs lane** (section between Mainlines and Programs) — the one lane group *not* driven by a
   dropdown. It exists because **manual runs are zone runs** (`ZN,MR,SY,ZN=12,PG=MR`) and zones default to
   **none**, so before this a fresh load showed *no* manual runs at all on the timeline or in the scrubber
@@ -433,9 +438,11 @@ index.html
   sortDir, revealedIds})` in `classify.js`. It drops duration markers (`isDurationMarker`) unless in
   `revealedIds`, keeps only `feedMatches` when searching, and orders by the active column (`feedSortValue`,
   numeric for date) or — with no sort — pins alarms then chronological. `renderFeed` just calls it, then
-  applies `FEED_CAP` + DOM. (Extracted so "the feed is the whole log, sortable 6/28→7/2" is covered by
+  applies the current `feedLimit` + DOM. (Extracted so "the feed is the whole log, sortable 6/28→7/2" is covered by
   `npm test`, not eyeballing.)
-- Capped at 1500 rows (`FEED_CAP`, top-level const, used by `renderFeed`'s slice + count label).
+- `FEED_CAP` is the **1,500-row progressive batch size**, not a permanent cap. `feedLimit` grows when the
+  user clicks Load More and resets only when the feed’s ordering/content changes (new file, filters,
+  search, or sort), not on timeline pan/zoom/scrubber renders.
 - **A row's ↗ button exists only when a timeline actually draws that event, and names where it goes** —
   `eventJumpTarget(e, runCovers)` (pure, `classify.js`) returns `{dest, bar, tick, diamond}` or **null**,
   and `feedRowHTML` emits an 80px spacer instead of a button when null (keeping the sort header's column
@@ -632,7 +639,7 @@ index.html
    `showErrorBanner`, and `initFeedback` (~half of `feedback.js`, 27% covered). If you want more DOM
    confidence, extend `e2e/smoke.spec.js` rather than extracting more out of app.js — what's left there is
    genuinely DOM-bound.
-2. **Large logs** rely on the 1500-row feed cap (`FEED_CAP`) + density binning; not virtualized.
+2. **Large logs** use progressive 1,500-row feed batches (`FEED_CAP`) + density binning; not virtualized.
 3. **Polish ideas** (not requested, just candidates): keyboard nav for the scrubber, persist toggle
    state across reloads, export the event/alert timeline data, narrow-screen layout for the drawer.
 

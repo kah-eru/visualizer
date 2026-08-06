@@ -56,7 +56,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 | `src/errors.js` | Global error handlers + ring buffer + fatal banner. |
 | `src/feedback.js` | Feedback/crash-report button + modal → Web3Forms. |
 | `tests/*.test.js` | Vitest unit tests for the pure modules (+ `errors.js` ring buffer, feedback privacy, golden pipeline runs over real CSVs). |
-| `e2e/smoke.spec.js` | The **only** automated DOM test: Playwright loads the built app + a CSV and asserts it renders. `npm run test:e2e`. |
+| `e2e/smoke.spec.js` | Three Playwright DOM checks: whole-app load/render, no-runtime zone blockers, and progressive feed batches. `npm run test:e2e`. |
 | `TESTING_AUDIT.md` | **Read before adding tests** — what's covered, what isn't, the coverage baseline, and the remaining P3. |
 | `.github/workflows/` | `ci.yml` (PRs/branches: unit + e2e) and `deploy.yml` (push to main → **unit**-test-gated build → Pages). |
 
@@ -78,18 +78,18 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 
 ---
 
-## Current state (as of 2026-07-15)
+## Current state (as of 2026-08-06)
 
-- **Version:** 1.0.0. **Branch:** `main` (tip `5f661b4` + the testing-remediation work below).
+- **Version:** 1.0.0. **Branch:** `main` (includes `999c918` and `9c2b57f`).
 - **Deployed & green.** CI gates the deploy on the Vitest suite.
-- **Tested: 200 Vitest tests across 9 files** (~3s) + **1 Playwright smoke test**. Covered: the pure data
+- **Tested: 200 Vitest tests across 9 files** + **3 Playwright browser tests**. Covered: the pure data
   logic (`parse`/`runs`/`format`/`classify`/`view`/`diagnostics`), the `errors.js` ring buffer, the
-  feedback-report privacy invariant, and golden end-to-end pipeline runs over real CSVs.
+  feedback-report privacy invariant, golden pipeline runs over real CSVs, whole-app rendering,
+  no-runtime zone blockers, and progressive feed batches.
   - **Coverage tooling exists now:** `npm run test:coverage`. Baseline **34% overall** — the pure modules
     are 97–100%, `app.js` is **0% and expected to be** (it can't be imported in Node). That 0 is the
     measure of the remaining blind spot, not a bug. Thresholds are per-file on the pure modules only.
-  - **Still hand-verified:** the render pipeline, swimlane/scrubber wiring, and PDF export. The smoke test
-    covers load→render only. After UI/render changes, still load `Evnt_flow_test.csv` in a browser.
+  - **Still hand-verified:** DOM interactions outside those three browser paths and PDF export.
   - **`TESTING_AUDIT.md` is still the full picture**, now annotated with what landed. Its P0/P1/P2 are
     **done**; **P3 (Gap 6 — `guard()`'s catch path + `initFeedback`) is open**. ⚠️ **That file's Gaps 4 & 5
     contain a factual error** — they assume the five sample CSVs are available to tests, but four are
@@ -97,10 +97,20 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
 - **Performance:** initial index JS ≈249 kB (gzip ≈88 kB). **PDF export is native browser print** now
   (`window.print()` + a `@media print` stylesheet) — the html2pdf.js/html2canvas dependency was removed
   (it froze the tab on large logs), so there's no on-demand export chunk anymore.
+- **Zone visibility:** selected zones keep a row without runtime; expanded programs add only explicit
+  `PG=` + `ZN=` links; blocker diamonds reveal the exact raw feed event.
+- **Audit visibility:** `FEED_CAP` is a progressive 1,500-row batch size. Load More reaches every
+  matching row; new files, filters, search, and sort reset the prefix.
 - **In-app help was audited for accuracy** against the code (tooltips + the "How to use" guide);
   three stale strings were corrected and the untooltipped controls filled in.
 
 ## Last session (most recent first)
+
+1. **Completed no-runtime zone visibility and the full progressive audit feed** (`999c918`, `9c2b57f`).
+   Direct selected-zone rows now come from the full zone inventory, expanded programs union runtime
+   zones with explicit `PG=` + `ZN=` links, and blocker diamonds open the exact raw event. The feed now
+   loads all eligible rows in 1,500-row batches while whole-log search/sort and forced reveals keep their
+   prior behavior. Added two Playwright regressions; CSV data remains entirely client-side.
 
 1. **Acted on the testing audit: P0 + both P1s + both P2s. 120 → 200 tests, plus coverage tooling and a
    Playwright smoke test.** Driven by `TESTING_AUDIT.md`'s ranked list. `REPO_ANALYSIS_PLAN.md`'s P3 DRY
@@ -357,7 +367,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
      `tests/errors.test.js` (ring-buffer cap/truncation/console-tee, with a minimal `window` shim — no jsdom
      dep). **90 → 102 tests.**
    - **P2 — performance.** `renderFeed` now **early-returns on an unchanged content signature** (the feed is
-     whole-log, so pan/nav/scrubber re-renders skip the `selectFeedRows` + ≤1500-row `innerHTML` rebuild);
+     whole-log, so pan/nav/scrubber re-renders skip the `selectFeedRows` + visible-prefix `innerHTML` rebuild);
      `applyFilters` sets `lastFeedSig = null` so a same-length filter swap still rebuilds. `feedSearchText`
      memoizes its haystack per event and `#feedSearch` is debounced ~150 ms; `selectFeedRows` column sort
      decorate-sort-undecorates. `visibleRunsAt()` is memoized (`visRunsCache` keyed on `runGen` + lane/type)
@@ -506,7 +516,7 @@ npm run build        # → dist/   (npm run preview to serve the prod bundle)
   outside the privacy test (**P0**, small fix); `src/app.js`'s pure logic isn't extracted or tested (**P1**);
   no golden fixture tests over the sample CSVs already in the repo (**P1**); no coverage tooling (**P2**);
   no integration/E2E layer (jsdom or Playwright) over the DOM render pipeline (**P2**).
-- Large logs rely on the 1500-row feed cap (`FEED_CAP`) + density binning; the feed isn't virtualized.
+- Large logs use progressive 1,500-row feed batches (`FEED_CAP`) + density binning; the feed isn't virtualized.
 - Polish ideas: keyboard nav for the scrubber, persist toggle state across reloads, export the
   event/alert timeline data, narrow-screen layout for the drawer.
 
