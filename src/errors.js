@@ -87,8 +87,8 @@ export function showErrorBanner(message, err) {
     "font-size:13px;padding:8px 14px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,0.5);";
   bannerEl.innerHTML =
     '<span style="flex:1">Something went wrong while rendering. Your data is safe — nothing was uploaded.</span>' +
-    '<button data-act="send" style="background:#fca5a5;color:#7f1d1d;font-weight:600;border:none;border-radius:4px;padding:4px 10px;cursor:pointer">Send report</button>' +
-    '<button data-act="close" style="background:transparent;color:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:4px 10px;cursor:pointer">Dismiss</button>';
+    '<button data-act="send" style="background:#fca5a5;color:#7f1d1d;font-weight:600;border:none;padding:4px 10px;cursor:pointer">Send report</button>' +
+    '<button data-act="close" style="background:transparent;color:#fee2e2;border:1px solid #fca5a5;padding:4px 10px;cursor:pointer">Dismiss</button>';
   bannerEl.querySelector('[data-act="send"]').addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent("open-feedback"));
   });
@@ -98,17 +98,4 @@ export function showErrorBanner(message, err) {
 
 function dismissBanner() {
   if (bannerEl) { bannerEl.remove(); bannerEl = null; }
-}
-
-/**
- * Run `fn` and, if it throws, record + show the banner instead of letting the
- * UI break. Returns fn's result, or undefined on error.
- */
-export function guard(fn, context) {
-  try {
-    return fn();
-  } catch (err) {
-    showErrorBanner(context || "Unexpected error", err);
-    return undefined;
-  }
 }

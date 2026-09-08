@@ -3,10 +3,10 @@ import { describe, it, expect, beforeAll } from "vitest";
 // errors.js installs window "error"/"unhandledrejection" listeners and tees console.error/warn at
 // IMPORT time. Provide a minimal window shim so the module imports under the Node test environment
 // (no jsdom dependency needed); we exercise the pure ring-buffer API, not the DOM banner.
-let getErrorLog, pushError, guard;
+let getErrorLog, pushError;
 beforeAll(async () => {
   globalThis.window = { addEventListener() {} };
-  ({ getErrorLog, pushError, guard } = await import("../src/errors.js"));
+  ({ getErrorLog, pushError } = await import("../src/errors.js"));
 });
 
 describe("errors.js ring buffer", () => {
@@ -42,11 +42,5 @@ describe("errors.js ring buffer", () => {
     const log = getErrorLog();
     expect(log.some(e => e.type === "console.error" && e.message.includes("teed error"))).toBe(true);
     expect(log.some(e => e.type === "console.warn" && e.message.includes("teed warn"))).toBe(true);
-  });
-});
-
-describe("guard", () => {
-  it("returns the function result on success", () => {
-    expect(guard(() => 42, "ctx")).toBe(42);
   });
 });

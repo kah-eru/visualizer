@@ -22,18 +22,18 @@ import {
 } from "./constants.js";
 import { showErrorBanner, pushError } from "./errors.js";
 // Pure data logic lives in dependency-free modules (unit-tested in tests/); app.js wires them to the DOM.
-import { eventsFromRows, inferEffectivePrograms } from "./parse.js";
-import { RUN_START, RUN_STOP, makeRun, buildRunIntervals, zoneRunInProgram, mergeSpans } from "./runs.js";
+import { eventsFromRows, inferEffectivePrograms, telemetryValue } from "./parse.js";
+import { RUN_START, buildRunIntervals, zoneRunInProgram, mergeSpans } from "./runs.js";
 import {
   escapeHtml, numCmp, distinctSorted, fmtTime, fmtTimeDate, fmtDuration,
-  windowLabel, snapWindow, centeredWindow, categoryColor, toLocalInput,
+  windowLabel, snapWindow, centeredWindow, categoryColor, toLocalInput, fromLocalInput,
 } from "./format.js";
 import {
   filterEvents, clampView, pxToTime, timeToPx, shiftRange, centeredRange,
   selectVisibleRuns, buildRunCoverIndex, runCoversAt, snapToEdges, jumpTitle,
 } from "./view.js";
 import {
-  isDurationMarker, feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
+  feedSeverity, EVENT_GROUPS, eventGroupOf, whyText, subjectSummary,
   eventRunTarget, selectFeedRows, eventJumpTarget,
 } from "./classify.js";
 import { buildDiagnostics } from "./diagnostics.js";
@@ -42,21 +42,20 @@ import { buildDiagnostics } from "./diagnostics.js";
 let allEvents = [];     // full parsed dataset
 let filtered = [];      // current filtered subset
 let hydroChart = null;  // Chart.js line chart (hydraulic overlay + shared time axis)
-let hydroDirty = true;  // rebuild chart datasets only when `filtered` changes (else just move the x-axis)
+let hydroDirty = true;  // rebuild chart datasets only after import or display-mode changes (else move the x-axis)
 let miniDensityDirty = true; // repaint the minimap histogram only when `filtered` changes (not on view-only moves)
 let viewSpan = 0;       // current view width (ms), used by the chart tick/tooltip time formatting
 let flowOn = false;     // show the hydraulic flow/pressure lines on the main timeline (off by default)
 let eventTlOn = false;  // show the separate Interventions & Alerts timeline (off by default)
 let soakSplit = true;   // split cycle-and-soak zone runs into watering vs soak segments (on by default)
 let zoomRange = null;   // {start,end} when zoomed in; null = use the date-filter window
-let zoomStack = [];     // previous ranges for "reset/zoom out"
 let hasHydro = false;   // dataset contains any AC/EX/PR telemetry
 let dataMinT = 0, dataMaxT = 0; // full data time bounds
-// run-interval cache: built lazily per mode from `filtered`, cleared whenever `filtered` changes.
+// Historical runs use complete evidence; feed filters never remove their start/stop boundaries.
 let runCache = {};      // { program|zone|mainline -> intervals[] }
 let globalEndCached = 0;// end-of-data marker for still-open ("ongoing") runs
-let runGen = 0;         // bumped on every applyFilters; invalidates the visibleRunsAt() memo
-let telemetry = [];     // chronological subset of `filtered` carrying AC/EX/PR (scrubber flow carry-forward)
+let runGen = 0;         // bumped on every successful import; invalidates the visibleRunsAt() memo
+let telemetry = [];     // chronological subset of `allEvents` carrying AC/EX/PR (scrubber flow carry-forward)
 let windowUnit = "day"; // active window unit: second|minute|hour|day|week|month|all|custom
 // which lanes show on the timeline (checklist dropdowns). empty set = group hidden.
 const laneSel = { program: new Set(), zone: new Set(), mainline: new Set() };
@@ -79,7 +78,7 @@ const isZoneBlocker = e => e.isAlert || ZONE_BLOCK_ACTIONS.has(e.actCode);
 
 /* ============================ Detail rendering (with hover help) ============================ */
 function keyTooltip(k) {
-  const info = KEY_INFO[k];
+  const info = Object.hasOwn(KEY_INFO, k) ? KEY_INFO[k] : null;
   if (!info) return `${k} — no published definition`;
   return `${k} — ${info.desc}` + (info.unit ? ` (${info.unit})` : "");
 }
@@ -88,7 +87,7 @@ function keyTooltip(k) {
 function chip(label, value, title, help) {
   const t = escapeHtml(title);
   const cls = help ? "help-chip" : "";
-  return `<span class="${cls} inline-flex items-baseline gap-1 mr-2 mb-1 px-2 py-0.5 rounded bg-slate-800 border border-slate-700" title="${t}">` +
+  return `<span class="${cls} inline-flex items-baseline gap-1 mr-2 mb-1 px-2 py-0.5 bg-slate-800 border border-slate-700" title="${t}">` +
          `<span class="text-slate-400 font-semibold">${escapeHtml(label)}</span>` +
          `<span class="text-slate-200">${escapeHtml(value)}</span></span>`;
 }
@@ -105,8 +104,7 @@ function detailHTML(ev) {
   if (ev.extras.length) {
     html += chip("Values", ev.extras.join(", "), "Positional values with no key", false);
   }
-  // exact CSV line, as written in the file
-  html += `<div class="w-full mt-2 pt-2 border-t border-slate-800 font-mono text-slate-400 break-all">${escapeHtml(ev.rawLine)}</div>`;
+  html += `<div class="w-full mt-2 pt-2 border-t border-slate-800 font-mono text-slate-400 break-all">Reconstructed CSV: ${escapeHtml(ev.rawLine)}</div>`;
   return html;
 }
 
@@ -115,7 +113,6 @@ const fileInput = $("fileInput");
 const dropZone = $("dropZone");
 const fileNameEl = $("fileName");
 
-dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
 dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
 dropZone.addEventListener("drop", e => {
@@ -124,26 +121,47 @@ dropZone.addEventListener("drop", e => {
 });
 fileInput.addEventListener("change", e => { if (e.target.files.length) handleFile(e.target.files[0]); });
 
+let uploadGeneration = 0;
 function handleFile(file) {
-  fileNameEl.textContent = file.name;
-  $("subtitle").textContent = "Parsing " + file.name + "…";
+  const generation = ++uploadGeneration;
+  const status = $("importStatus");
+  status.textContent = "Parsing " + file.name + "…";
+  // ponytail: bound in-memory imports to 20 MB; use chunked ingestion if larger archives are needed.
+  if (file.size > 20 * 1024 * 1024) {
+    status.textContent = "This file exceeds 20 MB. Choose a smaller event log. The previous log is unchanged.";
+    fileInput.value = "";
+    return;
+  }
   Papa.parse(file, {
     header: false,
     skipEmptyLines: true,
-    worker: false, // workers are blocked when the page is opened via file://
+    delimiter: ",",
+    worker: false,
     complete: (results) => {
+      if (generation !== uploadGeneration) return;
       try {
-        revealedFeedIds.clear(); // new file → drop any force-shown rows from the previous one
-        allEvents = eventsFromRows(results.data);
+        if (results.errors.length) throw new Error(`CSV parse error: ${results.errors[0].message}`);
+        const events = eventsFromRows(results.data);
+        if (!events.length) throw new Error("No valid events found in file.");
+        inferEffectivePrograms(events);
+        const skipped = results.data.length - events.length;
+        allEvents = events;
+        fileNameEl.textContent = file.name;
+        revealedFeedIds.clear();
+        clearTimeout(feedSearchTimer);
+        playheadTime = null;
         onDataLoaded();
+        status.textContent = skipped ? `${skipped.toLocaleString()} invalid/header row(s) skipped.` : "";
       } catch (err) {
-        pushError("parse", err && err.message, err && err.stack, file.name);
-        $("subtitle").textContent = "Error reading this file — see the feedback report for details.";
-        showErrorBanner("Failed to read the event file", err);
+        status.textContent = `${err.message} The previous successful log is retained.`;
+      } finally {
+        fileInput.value = "";
       }
     },
     error: (err) => {
-      $("subtitle").textContent = "Error parsing file: " + err.message;
+      if (generation !== uploadGeneration) return;
+      status.textContent = "Error reading file: " + err.message + ". The previous successful log is retained.";
+      fileInput.value = "";
     }
   });
 }
@@ -162,8 +180,8 @@ function fillLaneDropdown(group, keys, labelFn, colorFn, selectAll) {
   laneSel[group] = new Set(selectAll ? keys : []);
   const list = $("dd" + ddCap(group) + "List");
   list.innerHTML = keys.length
-    ? keys.map(k => `<label><input type="checkbox" class="ddItem w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500" value="${escapeHtml(k)}" ${selectAll ? "checked" : ""}>
-        <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:${colorFn(k)}"></span>${escapeHtml(labelFn(k))}</label>`).join("")
+    ? keys.map(k => `<label><input type="checkbox" class="ddItem w-3.5 h-3.5 bg-slate-900 border-slate-600 accent-sky-500" value="${escapeHtml(k)}" ${selectAll ? "checked" : ""}>
+        <span class="inline-block w-2.5 h-2.5 " style="background:${colorFn(k)}"></span>${escapeHtml(labelFn(k))}</label>`).join("")
     : '<span class="text-slate-500 text-xs">none in file</span>';
   const panel = $("dd" + ddCap(group) + "Panel");
   const allCb = panel.querySelector(".ddAll");
@@ -184,11 +202,6 @@ function updateLaneButtons() {
 
 /* ============================ After load: populate filters ============================ */
 function onDataLoaded() {
-  if (!allEvents.length) {
-    $("subtitle").textContent = "No valid events found in file.";
-    return;
-  }
-  inferEffectivePrograms(allEvents);
   programZones = new Map();
   for (const e of allEvents) {
     if (e.program == null || String(e.program) === MANUAL_PROG_TAG || !e.zones.length) continue;
@@ -205,7 +218,11 @@ function onDataLoaded() {
   // Default window: the calendar DAY (midnight → midnight) containing the file's last event.
   windowUnit = "day";
   zoomRange = snapWindow("day", maxT, { min: dataMinT, max: dataMaxT });
-  zoomStack = [];
+  runCache = {};
+  globalEndCached = dataMaxT + 1;
+  runGen++;
+  telemetry = allEvents.filter(e => ["AC", "EX", "PR"].some(k => telemetryValue(e, k) != null))
+    .sort((a, b) => a.ts - b.ts);
 
   // populate the timeline lane dropdowns (multi-select checklists). PG=MR isn't a program — it's the
   // tag on a manual zone run (see the Manual Runs lane), and it has no program bars to show, so keep
@@ -232,10 +249,11 @@ function onDataLoaded() {
   $("feedHead").classList.remove("hidden"); // sortable column header appears once a log is loaded
 
   // detect hydraulic telemetry → reveal the variance slider only when meaningful
-  hasHydro = allEvents.some(e => e.pairs.AC || e.pairs.EX);
-  $("varSection").classList.toggle("hidden", !hasHydro);
+  hasHydro = telemetry.length > 0;
+  const hasFlow = telemetry.some(e => telemetryValue(e, "AC") != null || telemetryValue(e, "EX") != null);
+  $("varSection").classList.toggle("hidden", !hasFlow);
   // Flag a loaded log that carries no flow telemetry so the user sees it without toggling Flow on.
-  $("flowNote").classList.toggle("hidden", !(allEvents.length && !hasHydro));
+  $("flowNote").classList.toggle("hidden", hasFlow);
 
   // flow max (for the optional Min-Flow slider under More filters)
   const fmax = allEvents.reduce((m, e) => e.flow != null && e.flow > m ? e.flow : m, 0);
@@ -246,10 +264,15 @@ function onDataLoaded() {
   $("flowValue").textContent = "0";
 
   $("subtitle").textContent =
-    `${allEvents.length.toLocaleString()} events — ${new Date(minT).toLocaleString()} to ${new Date(maxT).toLocaleString()}`;
+    `${allEvents.length.toLocaleString()} events — ${fmtTimeDate(minT, 0)} to ${fmtTimeDate(maxT, 0)} (controller time)`;
 
+  $("alertsOnly").checked = false; $("humanAudit").checked = false;
+  $("varMin").value = 0; $("varMax").value = 100; syncVarLabels();
+  hydroDirty = true;
+  playheadOn = true; $("scrubberOn").checked = true;
+  timeWrap.classList.add("scrub-on"); $("appRoot").classList.add("scrub-open");
+  playheadTime = (zoomRange.start + zoomRange.end) / 2;
   applyFilters();
-  setScrubber(true); // scrubber on by default — shows the "running now" side panel (chart/x-scale now exist)
 }
 
 /* ============================ Filtering ============================ */
@@ -274,22 +297,14 @@ function applyFilters() {
   filtered = filterEvents(allEvents, readFilterOpts());
   feedLimit = FEED_CAP;
 
-  // run intervals depend only on `filtered` → recompute their cache key and clear the memo
-  runCache = {};
-  globalEndCached = filtered.length ? filtered.reduce((m, e) => Math.max(m, e.ts.getTime()), 0) + 1 : dataMaxT + 1;
-  // chronological telemetry-only subset for the scrubber's flow carry-forward (usually hundreds of rows,
-  // vs. scanning all of `filtered` per animation frame). filtered preserves the file's chronological order.
-  telemetry = filtered.filter(e => e.pairs.AC || e.pairs.EX || e.pairs.PR);
-  runGen++; lastFeedSig = null; // filter changed → invalidate the visibleRunsAt() memo and force a feed rebuild
-
-  hydroDirty = true; // data/filter changed → chart datasets + minimap density need a full rebuild
+  lastFeedSig = null;
   miniDensityDirty = true;
   render();
 }
 
-// memoized run intervals for the current `filtered` set (see buildRunIntervals)
+// Memoized intervals over the full history, rebuilt only after a successful import.
 function runIntervals(mode) {
-  return runCache[mode] || (runCache[mode] = buildRunIntervals(filtered, mode, globalEndCached));
+  return runCache[mode] || (runCache[mode] = buildRunIntervals(allEvents, mode, globalEndCached));
 }
 
 /* ============================ Stat strip ============================ */
@@ -304,8 +319,8 @@ function renderStat(range, inWin) {
 // The active view window: an explicit zoom range, else the date-filter window.
 function currentRange() {
   if (zoomRange) return { start: zoomRange.start, end: zoomRange.end };
-  const f = new Date($("dateFrom").value).getTime();
-  const t = new Date($("dateTo").value).getTime();
+  const f = fromLocalInput($("dateFrom").value)?.getTime();
+  const t = fromLocalInput($("dateTo").value)?.getTime();
   const start = isFinite(f) ? f : dataMinT;
   const end = isFinite(t) ? t + 60000 : dataMaxT + 1;
   return { start, end: end > start ? end : start + 60000 };
@@ -313,6 +328,7 @@ function currentRange() {
 
 // Top-level render: stat strip → hydraulic chart (provides shared X scale) → swimlane → feed.
 function render() {
+  if (!allEvents.length) return;
   try {
     const range = currentRange();
     syncDateInputs(range);
@@ -335,18 +351,11 @@ function syncDateInputs(range) {
   $("dateTo").value = toLocalInput(new Date(range.end - 1));
 }
 
-// set the view to an aligned window of `unit`, snapped to the period containing `anchor`
-function setWindowUnit(unit, anchor) {
-  windowUnit = unit; zoomStack = [];
-  zoomRange = unit === "all" ? { start: dataMinT, end: dataMaxT + 1 } : snapWindow(unit, anchor, { min: dataMinT, max: dataMaxT });
-  render();
-}
-
 // set the view to a window of `unit`'s duration centered on the scrubber (½ the unit on each side), so
 // zooming in/out from the preset selector keeps the playhead put. Falls back to the view center when the
-// scrubber is off. Used by the preset buttons; `setWindowUnit` (calendar-aligned) still drives nav-stepping.
+// scrubber is off. Navigation preserves this centered window width.
 function setWindowUnitCentered(unit) {
-  windowUnit = unit; zoomStack = [];
+  windowUnit = unit;
   if (unit === "all") { zoomRange = { start: dataMinT, end: dataMaxT + 1 }; }
   else {
     const r = currentRange();
@@ -360,28 +369,18 @@ function setWindowUnitCentered(unit) {
 // corner jump-triangles to hop to the other end of a run at the same zoom level.
 function panToTime(t) {
   const r = currentRange();
-  zoomStack = []; zoomRange = centeredRange(t, r.end - r.start);
+  zoomRange = centeredRange(t, r.end - r.start);
   render();
 }
 
-function zoomOut() {
-  if (zoomStack.length) zoomRange = zoomStack.pop();
-  else zoomRange = null;            // back to the date-picker window
-  render();
-}
-// step to the adjacent period — re-snapping for aligned units, else shift by width
+// Keep the preset's centered window width when stepping.
 function navShift(dir) {
-  const r = currentRange();
-  if (windowUnit && windowUnit !== "custom" && windowUnit !== "all") {
-    setWindowUnit(windowUnit, dir > 0 ? r.end + 1 : r.start - 1);
-  } else {
-    zoomRange = shiftRange(r, dir);
-    render();
-  }
+  if (!allEvents.length) return;
+  zoomRange = shiftRange(currentRange(), dir);
+  render();
 }
 function updateNavControls(range) {
   const lbl = (windowUnit && windowUnit !== "custom" && windowUnit !== "all") ? windowUnit : windowLabel(range.end - range.start);
-  $("zoomOutBtn").classList.toggle("hidden", !zoomStack.length);
   $("navPrev").title = "Previous " + lbl;
   $("navNext").title = "Next " + lbl;
   $("navLabel").textContent = lbl + " view";
@@ -405,6 +404,8 @@ let revealedFeedIds = new Set();
 let feedQuery = "", feedSortCol = null, feedSortDir = "asc";
 let lastFeedSig = null; // content signature of the last feed render, to preserve scroll on view-only moves
 let feedLimit = FEED_CAP;
+let feedOrdered = [], feedRenderedIds = new Set();
+let feedAlertCount = 0, feedPrefix = 0;
 // A run bar to flash on the next swimlane render (set by a "locate on timeline" jump). {group,key,ts}.
 let pendingBarHighlight = null;
 // The last located run + time. Unlike pendingBarHighlight (a one-shot arrival pulse) these are sticky:
@@ -425,11 +426,12 @@ function buildHydroChart(range) {
   viewSpan = range.end - range.start;
   const acPts = [], exPts = [], prPts = [];
   // only gather flow series when the Flow overlay is enabled; otherwise the chart is just a thin time axis
-  if (flowOn) for (const e of filtered) {
+  if (flowOn) for (const e of telemetry) {
     const t = e.ts.getTime();
-    if (e.pairs.AC) acPts.push({ x: t, y: e.pairs.AC.value });
-    if (e.pairs.EX) exPts.push({ x: t, y: e.pairs.EX.value });
-    if (e.pairs.PR) prPts.push({ x: t, y: e.pairs.PR.value });
+    const ac = telemetryValue(e, "AC"), ex = telemetryValue(e, "EX"), pr = telemetryValue(e, "PR");
+    if (ac != null) acPts.push({ x: t, y: ac });
+    if (ex != null) exPts.push({ x: t, y: ex });
+    if (pr != null) prPts.push({ x: t, y: pr });
   }
   const datasets = [];
   if (acPts.length) datasets.push({ label: "Actual flow (L/min)", data: acPts, borderColor: "#38bdf8", backgroundColor: "#38bdf8", yAxisID: "yFlow", pointRadius: 2, borderWidth: 2, tension: 0.2 });
@@ -455,6 +457,7 @@ function buildHydroChart(range) {
     data: { datasets },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+      onResize: scheduleOverlayLayout,
       layout: { padding: { left: 52, right: 8, top: 4 } }, // fixed gutter so swimlane lane labels fit/align
       plugins: { legend: { display: false },
         tooltip: { mode: "index", intersect: false, callbacks: { title: items => items.length ? fmtTime(items[0].parsed.x, viewSpan) : "" } } },
@@ -463,7 +466,7 @@ function buildHydroChart(range) {
   });
   $("legendHydro").innerHTML =
     !flowOn ? '<span class="text-slate-600">Flow overlay off — enable “Flow” to chart actual/expected flow &amp; pressure.</span>'
-    : hasData ? datasets.map(d => `<span class="flex items-center gap-1"><span class="inline-block w-3 h-2 rounded-sm" style="background:${d.borderColor}"></span><span class="text-slate-300">${escapeHtml(d.label)}</span></span>`).join("")
+    : hasData ? datasets.map(d => `<span class="flex items-center gap-1"><span class="inline-block w-3 h-2 " style="background:${d.borderColor}"></span><span class="text-slate-300">${escapeHtml(d.label)}</span></span>`).join("")
     : '<span class="text-slate-500" title="Flow is charted from Actual (AC) / Expected (EX) readings and pressure from PR — the controller logs these during zone runs with flow monitoring. None are present here; check the FlowStation / flow report for flow with no zones running.">No flow readings (AC/EX/PR) in this log — check the FlowStation / flow report.</span>';
 }
 
@@ -483,6 +486,17 @@ function renderHydro(range) {
 }
 
 /* ---- Component A: Swimlane (duration runs), pixel-aligned to the hydraulic X scale ---- */
+let overlayRaf = null;
+function scheduleOverlayLayout() {
+  if (overlayRaf) return;
+  overlayRaf = requestAnimationFrame(() => {
+    overlayRaf = null;
+    if (!allEvents.length || !chartArea()) return;
+    const range = currentRange();
+    renderSwimlane(range); renderEventTimeline(range);
+    miniDensityDirty = true; renderMiniMap(range);
+  });
+}
 const SWIM_ROW_H = 26;
 function refreshSwimlane() { renderSwimlane(currentRange()); }
 
@@ -522,13 +536,13 @@ function barHTML(iv, xOf, range, word, fill, soak) {
   }
   // ▶ top-left → jump to this run's END;  ◀ top-right → jump to its START (only when clickable)
   const jumps = width >= 16
-    ? `<span class="tl-jump tl-jump-start" data-to="${iv.end}" title="Jump to end (${escapeHtml(eTxt)})"></span>` +
-      `<span class="tl-jump tl-jump-end" data-to="${iv.start}" title="Jump to start (${escapeHtml(sTxt)})"></span>`
+    ? `<span role="button" tabindex="0" class="tl-jump tl-jump-start" data-to="${iv.end}" title="Jump to end (${escapeHtml(eTxt)})"></span>` +
+      `<span role="button" tabindex="0" class="tl-jump tl-jump-end" data-to="${iv.start}" title="Jump to start (${escapeHtml(sTxt)})"></span>`
     : "";
   // group/key/runstart let a bar click resolve back to the run's raw start event in the feed. For a
   // soak/watering *segment* iv.start is the segment start, so iv.runStart carries the true run start.
   const runStart = iv.runStart != null ? iv.runStart : iv.start;
-  return `<div class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" data-group="${word}" data-key="${escapeHtml(String(iv.key))}" data-runstart="${runStart}" style="${style}" title="${escapeHtml(title)}">${inner}${badge}${jumps}</div>`;
+  return `<div role="button" tabindex="0" aria-label="${escapeHtml(title)}" class="tl-bar ${cls}${hatch} ${clipL ? "clip-l" : ""} ${clipR ? "clip-r" : ""}" data-start="${iv.start}" data-end="${iv.end}" data-group="${word}" data-key="${escapeHtml(String(iv.key))}" data-runstart="${runStart}" style="${style}" title="${escapeHtml(title)}">${inner}${badge}${jumps}</div>`;
 }
 
 // Render a zone run's bars. With soak handling on, a cycle-and-soak run (iv.segments) is drawn as
@@ -590,7 +604,7 @@ function renderSwimlane(range, attempt) {
 
   const lblW = Math.max(40, area.left);
   const lblBase = laneLabelStyle(SWIM_ROW_H, lblW);
-  const swatch = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;background:${c}"></span>`;
+  const swatch = c => `<span style="display:inline-block;width:8px;height:8px;margin-right:4px;background:${c}"></span>`;
   const section = txt => groupsOn > 1 ? `<div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mt-2 mb-1 pl-1">${txt}</div>` : "";
   const track = (lbl, bars, bg) => `<div class="tl-track" style="height:${SWIM_ROW_H}px;margin-bottom:3px;${bg ? "background:" + bg + ";" : ""}">${lbl}${bars}</div>`;
 
@@ -604,10 +618,8 @@ function renderSwimlane(range, attempt) {
   // fillLaneDropdown in onDataLoaded). Without this a log whose manual runs are all zone runs shows
   // none of them on load, which is exactly the demo bug this section exists to fix.
   const manualRuns = showManual ? runIntervals("zone").filter(inWin).filter(iv => iv.manual) : [];
-  // When Zones is on, every manual run is already counted in zoneRuns (a manual run passes runTypeOk
-  // whenever showManual) — only count the section separately when it's showing runs nothing else does.
-  const manualExtra = showZones ? 0 : manualRuns.length;
-  $("statRuns").textContent = (progRuns.length + zoneRuns.length + mainRuns.length + manualExtra).toLocaleString();
+  // Count logical runs once, even when expanded children or manual lanes draw them more than once.
+  $("statRuns").textContent = visibleRunsAt().filter(inWin).length.toLocaleString();
 
   // index runs by key once (instead of re-filtering the whole array per key in the loops below)
   const byKey = runs => { const m = new Map(); for (const iv of runs) (m.get(iv.key) || m.set(iv.key, []).get(iv.key)).push(iv); return m; };
@@ -642,7 +654,7 @@ function renderSwimlane(range, attempt) {
       const title = `${zones.length} zone${zones.length > 1 ? "s" : ""} run by hand: ${zones.map(z => "Z" + z).join(", ")} — ${fmtTime(s.start, range.end - range.start)} → ${fmtTime(s.end, range.end - range.start)}`;
       return `<div class="tl-bar tl-manual-envelope" title="${escapeHtml(title)}" style="left:${x1}px;width:${width}px;"></div>`;
     }).join("");
-    const lbl = `<span class="lane-label" data-manual="1" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Manual runs — started by a person, not the schedule. Click to ${expandedManual ? "hide" : "show"} the zones. Shown regardless of the Zones dropdown; hide the section with Run type → Manual.">${expandedManual ? "▾" : "▸"} MR</span>`;
+    const lbl = `<button type="button" class="lane-label" data-manual="1" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Manual runs — started by a person, not the schedule. Click to ${expandedManual ? "hide" : "show"} the zones. Shown regardless of the Zones dropdown; hide the section with Run type → Manual.">${expandedManual ? "▾" : "▸"} MR</button>`;
     html += track(lbl, bars);
     if (expandedManual) {
       const manualByKey = byKey(manualRuns);
@@ -667,7 +679,7 @@ function renderSwimlane(range, attempt) {
     for (const k of pKeys) {
       const bars = (progByKey.get(k) || []).map(iv => barHTML(iv, xOf, range, "Program")).join("");
       const expanded = expandedPrograms.has(k);
-      const lbl = `<span class="lane-label" data-prog="${escapeHtml(k)}" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Click to ${expanded ? "hide" : "show"} zones in Program ${escapeHtml(k)}">${expanded ? "▾" : "▸"} P${escapeHtml(k)}</span>`;
+      const lbl = `<button type="button" class="lane-label" data-prog="${escapeHtml(k)}" style="cursor:pointer;color:#cbd5e1;${lblBase}" title="Click to ${expanded ? "hide" : "show"} zones in Program ${escapeHtml(k)}">${expanded ? "▾" : "▸"} P${escapeHtml(k)}</button>`;
       html += track(lbl, bars);
       if (expanded) {
         const inProg = z => zoneRunInProgram(z, k, realProgTags, progByKey.get(k) || []);
@@ -702,7 +714,7 @@ function renderSwimlane(range, attempt) {
   let alertHTML = "";
   if ($("showAlertMarks").checked) {
     const marks = filtered.filter(e => e.isAlert && e.ts.getTime() >= range.start && e.ts.getTime() < range.end)
-      .map(e => { const t = e.ts.getTime(); return `<div class="alert-mark" data-tsms="${t}" title="${escapeHtml(fmtTime(t, range.end - range.start) + " — " + e.action + " (" + e.category + ")")}" style="left:${xOf(t)}px;"></div>`; }).join("");
+      .map(e => { const t = e.ts.getTime(); return `<button type="button" class="alert-mark" data-eid="${e._id}" data-tsms="${t}" title="${escapeHtml(fmtTime(t, range.end - range.start) + " — " + e.action + " (" + e.category + ")")}" style="left:${xOf(t)}px;"></button>`; }).join("");
     alertHTML = `<div id="alertStrip" style="position:relative;height:12px;margin-bottom:2px;z-index:6;">${marks}</div>`;
   }
 
@@ -732,7 +744,7 @@ function renderSwimlane(range, attempt) {
       }
       if (ev.target.closest(".lane-label[data-manual]")) { expandedManual = !expandedManual; refreshSwimlane(); return; }
       const mark = ev.target.closest(".alert-mark[data-tsms]");
-      if (mark) { jumpTo(Number(mark.getAttribute("data-tsms"))); return; }
+      if (mark) { revealFeedEvent(allEvents[Number(mark.dataset.eid)]); return; }
       const bar = ev.target.closest(".tl-bar[data-runstart]");
       if (bar) { ev.stopPropagation();
         // scroll the audit feed to this run's raw start line and highlight it (no zoom)
@@ -792,7 +804,7 @@ function renderEventTimeline(range, attempt) {
 
   const lblW = Math.max(40, area.left);
   const lblBase = laneLabelStyle(20, lblW);
-  const swatch = c => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;transform:rotate(45deg);margin-right:5px;background:${c}"></span>`;
+  const swatch = c => `<span style="display:inline-block;width:8px;height:8px;transform:rotate(45deg);margin-right:5px;background:${c}"></span>`;
 
   let html = "";
   let total = 0;
@@ -805,7 +817,7 @@ function renderEventTimeline(range, attempt) {
       const title = `${fmtTime(t, span)} — ${e.action} (${e.category}) · by ${e.trigger}\n${whyText(e)}`;
       // data-eid as well as data-tsms: several events can share a timestamp, and a located jump has to
       // ring the exact one it came from.
-      return `<div class="ev-mark" data-tsms="${t}" data-eid="${e._id}" title="${escapeHtml(title)}" style="left:${xOf(t)}px;background:${g.color};"></div>`;
+      return `<button type="button" class="ev-mark" data-tsms="${t}" data-eid="${e._id}" title="${escapeHtml(title)}" style="left:${xOf(t)}px;background:${g.color};"></button>`;
     }).join("");
     html += `<div class="ev-track">
       <span style="color:#cbd5e1;${lblBase}" title="${escapeHtml(g.label)} (${list.length})">${swatch(g.color)}${escapeHtml(g.label)}</span>${marks}</div>`;
@@ -824,14 +836,14 @@ function renderEventTimeline(range, attempt) {
     lane._delegated = true;
     lane.addEventListener("click", ev => {
       const m = ev.target.closest(".ev-mark[data-tsms]");
-      if (m) jumpTo(Number(m.getAttribute("data-tsms")));
+      if (m) revealFeedEvent(allEvents[Number(m.dataset.eid)]);
     });
   }
 
   // legend (only the groups present) + count
   const present = EVENT_GROUPS.filter(g => evs.some(e => eventGroupOf(e) === g));
   $("eventLegend").innerHTML = present.map(g =>
-    `<span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="transform:rotate(45deg);background:${g.color}"></span><span class="text-slate-300">${escapeHtml(g.label)}</span></span>`).join("");
+    `<span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 " style="transform:rotate(45deg);background:${g.color}"></span><span class="text-slate-300">${escapeHtml(g.label)}</span></span>`).join("");
   $("eventTlInfo").textContent = total ? `— ${total.toLocaleString()} in view` : "";
 }
 
@@ -854,20 +866,16 @@ function scrollFeedTo(row) {
 }
 // expand a feed row's detail, scroll it into view (inside the feed box), and flash it
 function flashFeedRow(row) {
-  const host = $("auditFeed");
-  const d = host.querySelector(`[data-fdetail="${row.getAttribute("data-idx")}"]`);
-  if (d) d.classList.remove("hidden");
+  toggleFeedDetail(row, true);
   scrollFeedTo(row);
   row.classList.add("feed-flash");
   setTimeout(() => row.classList.remove("feed-flash"), 1400);
 }
-// scroll the audit feed to the event at `ts`, expand and flash it
-function focusFeedEvent(ts) {
-  const row = $("auditFeed").querySelector(`.feed-row[data-tsms="${ts}"]`);
-  if (row) flashFeedRow(row);
-}
+// Reveal an exact event regardless of pagination, search or event filters.
+
 function revealFeedEvent(e) {
   if (!e) return;
+  clearTimeout(feedSearchTimer); feedQuery = ""; $("feedSearch").value = "";
   revealedFeedIds.add(e._id);
   lastFeedSig = null;
   renderFeed();
@@ -880,31 +888,23 @@ function revealFeedEvent(e) {
 // then expand/flash the row.
 function revealRunStart(e) {
   if (!e) return;
-  const ts = e.ts.getTime();
-  if (isDurationMarker(e)) revealedFeedIds.add(e._id);
-  const r = currentRange();
-  if (ts < r.start || ts >= r.end) panToTime(ts); // off-screen → center the view on it (re-renders)
-  else render();                                   // in view → rebuild the feed with the revealed row
-  scrollPageTo($("feedScroll"), "nearest");        // bring the feed on-screen if it's below the fold
-  const row = $("auditFeed").querySelector(`.feed-row[data-eid="${e._id}"]`);
-  if (row) flashFeedRow(row);
+  const ts = e.ts.getTime(), r = currentRange();
+  if (ts < r.start || ts >= r.end) panToTime(ts);
+  revealFeedEvent(e);
 }
 // Resolve a visible run (group + key + start ms) back to its raw start event in `filtered`.
 function findRunStartEvent(group, key, startMs) {
-  return filtered.find(e => e.ts.getTime() === startMs && (
+  return allEvents.find(e => e.ts.getTime() === startMs && (
     group === "Zone" ? (e.catCode === "ZN" && (e.actCode === "WT" || e.actCode === "MR") && e.zones.includes(String(key)))
     : group === "Program" ? (e.catCode === "PG" && RUN_START.has(e.actCode) && String(e.program) === String(key))
     : group === "Mainline" ? (e.catCode === "ML" && e.actCode === "RN" && String(e.mainline) === String(key))
     : false));
 }
 
-// scroll/expand/flash the matching feed row (shared by all marker clicks)
-function jumpTo(ts) { scrollPageTo($("feedScroll"), "nearest"); focusFeedEvent(ts); }
-
 // "Is a run bar actually drawn for this lane at this instant?" — backs eventJumpTarget, which decides
 // whether a feed row gets a ↗ button at all. eventRunTarget only says which lane an event NAMES: a
 // `ZN,WA` names a zone while it's queued, not watering, so there's no bar to ring. Indexed by lane and
-// memoized on runGen — applyFilters does `runGen++; lastFeedSig = null;` together, so runs can never
+// memoized on runGen — successful imports invalidate both runs and feed, so runs can never
 // change without a feed rebuild, and renderFeed's content signature needs no extra term. Independent of
 // laneSel/run-type on purpose: the bar exists whether or not its lane is shown, and ensureLaneVisible
 // switches a hidden lane on when the jump lands.
@@ -950,7 +950,10 @@ function locateOnTimeline(ts, target, feedEvent, srcEvent) {
   locatedRun = pendingBarHighlight;                // sticky ring; survives re-render until the next jump
   locatedTs = ts;
   locatedEid = jump && jump.diamond ? srcEvent._id : null; // sticky ring on the event-timeline diamond
-  if (feedEvent && isDurationMarker(feedEvent)) revealedFeedIds.add(feedEvent._id);
+  if (feedEvent) {
+    clearTimeout(feedSearchTimer); feedQuery = ""; $("feedSearch").value = "";
+    revealedFeedIds.add(feedEvent._id); lastFeedSig = null;
+  }
   const r = currentRange();
   if (ts < r.start || ts >= r.end) panToTime(ts);  // off-screen → center (re-renders: highlight + playhead apply)
   else render();                                   // in view → re-render so the highlight + playhead apply
@@ -977,13 +980,15 @@ function visibleRunsAt() {
   const showManual = $("showManual").checked;
   // Called per pointermove (snapTime) and per scrubber-panel frame — memoize the (spread-heavy) build.
   // Invalidate when the run cache is rebuilt (runGen, bumped in applyFilters) or lane/run-type changes.
-  const key = runGen + "|" + (showScheduled ? 1 : 0) + (showManual ? 1 : 0) + "|" +
-    [...laneSel.program] + "|" + [...laneSel.zone] + "|" + [...laneSel.mainline];
+  const range = currentRange();
+  const key = JSON.stringify([runGen, showScheduled, showManual, [...laneSel.program],
+    [...laneSel.zone], [...laneSel.mainline], [...expandedPrograms], range.start, range.end]);
   if (visRunsCache && visRunsKey === key) return visRunsCache;
   const out = selectVisibleRuns(
     { program: runIntervals("program"), zone: runIntervals("zone"), mainline: runIntervals("mainline") },
     laneSel, { showScheduled, showManual },
     (group, k) => (group === "Zone" ? zoneColor(k) : categoryColor(group + " " + k)),
+    { expandedPrograms, range },
   );
   visRunsCache = out; visRunsKey = key;
   return out;
@@ -1005,7 +1010,9 @@ function positionPlayhead() {
   const xScale = chartX();
   if (!playheadOn || playheadTime == null || !xScale) { el.style.display = "none"; panel.classList.add("hidden"); positionMiniPlayhead(); return; }
   const r = currentRange();
+  el.setAttribute("aria-valuemin", String(r.start)); el.setAttribute("aria-valuemax", String(r.end));
   playheadTime = Math.max(r.start, Math.min(r.end, playheadTime)); // clamp into view
+  el.setAttribute("aria-valuenow", String(playheadTime)); el.setAttribute("aria-valuetext", fmtTimeDate(playheadTime, 0));
   el.style.left = xScale.getPixelForValue(playheadTime) + "px";
   el.style.display = "block";
   $("playheadTime").textContent = fmtTimeDate(playheadTime, 0); // exact date + time incl. seconds
@@ -1026,7 +1033,7 @@ function updateScrubPanel() {
   const active = visibleRunsAt().filter(iv => iv.start <= t && t <= iv.end)
     .sort((a, b) => a.group.localeCompare(b.group) || numCmp(a.key, b.key));
   const runningCount = active.filter(iv => !isOver(iv)).length; // an ended run isn't "running now"
-  const dot = (c, dim) => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${c};${dim ? "opacity:.45;" : ""}"></span>`;
+  const dot = (c, dim) => `<span style="display:inline-block;width:9px;height:9px;margin-right:6px;background:${c};${dim ? "opacity:.45;" : ""}"></span>`;
   let runHTML = active.length
     ? active.map(iv => {
         const over = isOver(iv);
@@ -1044,20 +1051,22 @@ function updateScrubPanel() {
         // "x into y run" reads wrong once the run is done — state the length it ran instead.
         const progress = over ? `ran ${fmtDuration(iv.end - iv.start)}` : `${fmtDuration(t - iv.start)} into ${fmtDuration(iv.end - iv.start)} run`;
         const rowTitle = `${tagWhy}Click to move the scrubber to this run's start, flash its bar, and open it in the audit feed.`;
-        return `<div class="scrub-run cursor-pointer hover:bg-slate-800 rounded px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="${escapeHtml(rowTitle)}">
+        return `<div role="button" tabindex="0" class="scrub-run cursor-pointer hover:bg-slate-800 px-1" data-group="${iv.group}" data-key="${escapeHtml(String(iv.key))}" data-start="${iv.start}" title="${escapeHtml(rowTitle)}">
         <div class="flex items-baseline gap-1 py-0.5">${dot(iv.color, soaking || over)}<span class="${over ? "text-slate-400" : "text-slate-200"}">${iv.group} ${escapeHtml(iv.key)}</span>
         <span class="text-slate-500 text-xs ml-auto">${escapeHtml(fmtTime(iv.start, span))}→${iv.ongoing ? "…" : escapeHtml(fmtTime(iv.end, span))}</span></div>
         <div class="text-[10px] ${soaking ? "text-sky-400" : "text-slate-500"} pl-4 pb-1">${progress}${tag}</div></div>`;
       }).join("")
     : `<div class="text-slate-500 text-xs">Nothing running.</div>`;
 
-  // flow/pressure carry-forward (latest sample at/before t in window)
+  // flow/pressure carry-forward (latest known sample at/before t, independent of zoom)
   let flowHTML = "";
   if (hasHydro) {
     let ac = null, ex = null, pr = null, at = null;
     // telemetry is the chronological AC/EX/PR-only subset (hundreds of rows), so we can stop once past t.
-    for (const e of telemetry) { const et = e.ts.getTime(); if (et < r.start) continue; if (et > t) break;
-      if (e.pairs.AC) { ac = e.pairs.AC.value; at = et; } if (e.pairs.EX) ex = e.pairs.EX.value; if (e.pairs.PR) pr = e.pairs.PR.value; }
+    for (const e of telemetry) { const et = e.ts.getTime(); if (et > t) break;
+      const a = telemetryValue(e, "AC"), x = telemetryValue(e, "EX"), p = telemetryValue(e, "PR");
+      if (a != null) ac = a; if (x != null) ex = x; if (p != null) pr = p;
+      if (a != null || x != null || p != null) at = et; }
     if (ac != null || ex != null || pr != null) {
       const row = (lbl, v, u) => v == null ? "" : `<div class="flex justify-between"><span class="text-slate-400">${lbl}</span><span class="text-slate-200">${v.toFixed(1)} ${u}</span></div>`;
       flowHTML = `<div><div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Flow</div>
@@ -1075,7 +1084,7 @@ function updateScrubPanel() {
       near.map(e => {
         const where = e.zones.length ? `Zone ${e.zones.join(", ")}` : (e.program != null ? `Program ${e.program}` : (e.mainline != null ? `Mainline ${e.mainline}` : ""));
         const detail = [where, whyText(e)].filter(Boolean).join(" — "); // what had the error + what the error was
-        return `<div class="scrub-alert py-1 cursor-pointer hover:bg-slate-800 rounded px-1" data-tsms="${e.ts.getTime()}" data-eid="${e._id}" title="Alarm/error near the playhead. Click to move the scrubber here, flash its bar, and open it in the audit feed.">
+        return `<div role="button" tabindex="0" class="scrub-alert py-1 cursor-pointer hover:bg-slate-800 px-1" data-tsms="${e.ts.getTime()}" data-eid="${e._id}" title="Alarm/error near the playhead. Click to move the scrubber here, flash its bar, and open it in the audit feed.">
         <div class="flex items-baseline gap-1">
           <span class="text-rose-300 text-xs">${escapeHtml(e.action)}</span><span class="text-slate-500 text-[10px]">${escapeHtml(e.category)}</span>
           <span class="text-slate-500 text-[10px] ml-auto">${escapeHtml(fmtTime(e.ts.getTime(), span))}</span>
@@ -1111,84 +1120,87 @@ function updateScrubPanel() {
 
 // Spell out where a row's ↗ actually goes and what it will mark there — the button used to promise a
 // timeline jump on every row, including the ~72% that had nothing to land on.
-function feedRowHTML(e, idx) {
-  const sev = feedSeverity(e);
+function feedRowHTML(e) {
+  const sev = feedSeverity(e), subj = subjectSummary(e), ts = e.ts.getTime();
   const sevCls = sev === "crit" ? "feed-crit" : sev === "warn" ? "feed-warn" : sev === "audit" ? "feed-audit" : "";
-  const subj = subjectSummary(e);
-  const ts = e.ts.getTime();
-  // Only offer the jump when a timeline actually draws this event, and send it to the one that does:
-  // pauses/disables/configs live only on the Interventions & Alerts card, runs and alarms on the main
-  // timeline. A row with no marker anywhere (a run-list heartbeat, a sensor reading — most of the log)
-  // keeps the 80px column as an empty spacer so it stays lined up with the sort header.
   const jump = eventJumpTarget(e, runCovers);
-  const jumpHTML = !jump
-    ? `<span style="width:80px"></span>`
+  const jumpHTML = !jump ? '<span style="width:80px"></span>'
     : `<button class="feed-jump text-sky-400 hover:text-sky-200 text-xs whitespace-nowrap text-right" style="width:80px" data-tsms="${ts}" title="${escapeHtml(jumpTitle(jump, ts))}">↗ ${jump.dest === "events" ? "events" : "timeline"}</button>`;
-  return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${idx}" data-eid="${e._id}" data-tsms="${ts}">
-      <span class="text-slate-400 text-xs whitespace-nowrap" style="width:130px">${e.tsRaw.replace(/\s*[+-]\d{4}\s*$/, "")}</span>
+  return `<div class="feed-row ${sevCls} ${e.isAlert ? "feed-pinned" : ""} px-4 py-2 flex flex-wrap items-baseline gap-x-3" data-idx="${e._id}" data-eid="${e._id}" data-tsms="${ts}">
+      <button class="feed-expand text-left text-slate-400 text-xs whitespace-nowrap" style="width:130px" aria-expanded="false" aria-controls="feed-detail-${e._id}" title="Expand event details">${escapeHtml(e.tsRaw.replace(/\s*[+-]\d{4}\s*$/, ""))}</button>
       <span class="text-slate-200 text-sm" style="width:88px">${escapeHtml(e.action)}</span>
       <span class="text-slate-500 text-xs" style="width:72px">${escapeHtml(e.category)}</span>
       <span class="text-sky-200 text-xs" style="flex:1 1 140px;min-width:120px">${subj.html}</span>
       <span class="text-slate-500 text-xs truncate" style="width:96px" title="${escapeHtml(`${e.trgCode || "?"} = ${e.trigger}`)}">by ${escapeHtml(e.trigger)}</span>
       ${jumpHTML}
     </div>
-    <div class="hidden px-4 py-3 text-xs leading-relaxed flex flex-wrap" style="background:#0b1220" data-fdetail="${idx}">${detailHTML(e)}</div>`;
+    <div id="feed-detail-${e._id}" class="hidden px-4 py-3 text-xs leading-relaxed flex flex-wrap" style="background:#0b1220" data-fdetail="${e._id}"></div>`;
+}
+function toggleFeedDetail(row, open) {
+  const detail = row.nextElementSibling;
+  if (!detail || !detail.hasAttribute("data-fdetail")) return;
+  if (open === undefined) open = detail.classList.contains("hidden");
+  if (open && !detail.dataset.loaded) {
+    detail.innerHTML = detailHTML(allEvents[Number(row.dataset.eid)]);
+    detail.dataset.loaded = "true";
+  }
+  detail.classList.toggle("hidden", !open);
+  row.querySelector(".feed-expand").setAttribute("aria-expanded", String(open));
 }
 function renderFeed() {
-  const host = $("auditFeed");
-  const searching = !!feedQuery;
-  // Content signature: when the rows are unchanged across pan / nav / scrubber re-renders, the DOM
-  // (including any expanded rows and the scroll position) is already correct — skip the whole rebuild.
-  // applyFilters sets lastFeedSig=null so any filter change forces a rebuild even at equal length.
-  const sig = `${feedQuery}\u0001${feedSortCol}\u0001${feedSortDir}\u0001${filtered.length}\u0001${revealedFeedIds.size}\u0001${feedLimit}`;
-  if (lastFeedSig !== null && sig === lastFeedSig) return; // rows unchanged → skip selectFeedRows + DOM rebuild
-  lastFeedSig = sig;
-  const ordered = selectFeedRows(filtered, { query: feedQuery, sortCol: feedSortCol, sortDir: feedSortDir, revealedIds: revealedFeedIds });
-  const alertCount = ordered.reduce((n, e) => n + (e.isAlert ? 1 : 0), 0);
-  const shown = ordered.slice(0, feedLimit);
-  // make sure a revealed row survives the visible prefix so the jump can find it
-  for (const e of ordered.slice(feedLimit)) if (revealedFeedIds.has(e._id)) shown.push(e);
-  const total = ordered.length;
-  const remaining = Math.max(0, total - feedLimit);
-  const next = Math.min(FEED_CAP, remaining);
-  const more = remaining
-    ? `<div class="px-4 py-3 text-center border-t border-slate-800"><button type="button" class="feed-load-more bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-300 text-xs font-semibold px-4 py-2 rounded-md">Load ${next.toLocaleString()} more <span class="text-slate-500">(${remaining.toLocaleString()} remaining)</span></button></div>`
-    : "";
-  host.innerHTML = shown.length
-    ? shown.map((e, idx) => feedRowHTML(e, idx)).join("") + more
-    : `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events loaded."}</div>`;
-  // One delegated listener (attached once) instead of re-binding every row on each render.
+  const host = $("auditFeed"), searching = !!feedQuery;
+  const sig = JSON.stringify([feedQuery, feedSortCol, feedSortDir, filtered.length, [...revealedFeedIds]]);
+  const reset = lastFeedSig !== sig || feedLimit < feedPrefix;
+  if (!reset && feedPrefix === Math.min(feedLimit, feedOrdered.length)) return;
+  if (reset) {
+    const source = [...filtered], ids = new Set(source.map(e => e._id));
+    for (const id of revealedFeedIds) if (!ids.has(id) && allEvents[id]) source.push(allEvents[id]);
+    feedOrdered = selectFeedRows(source, { query: feedQuery, sortCol: feedSortCol, sortDir: feedSortDir, revealedIds: revealedFeedIds });
+    feedAlertCount = feedOrdered.reduce((n, e) => n + Number(e.isAlert), 0);
+    feedPrefix = 0; feedRenderedIds.clear(); host.replaceChildren();
+    lastFeedSig = sig;
+  }
+  host.querySelector(".feed-more")?.remove();
+  const append = e => {
+    if (!feedRenderedIds.has(e._id)) {
+      host.insertAdjacentHTML("beforeend", feedRowHTML(e));
+      feedRenderedIds.add(e._id);
+    } else {
+      const row = host.querySelector(`.feed-row[data-eid="${e._id}"]`);
+      const detail = row.nextElementSibling;
+      host.append(row, detail);
+    }
+  };
+  for (const e of feedOrdered.slice(feedPrefix, feedLimit)) append(e);
+  feedPrefix = Math.min(feedLimit, feedOrdered.length);
+  for (const e of feedOrdered.slice(feedPrefix)) if (revealedFeedIds.has(e._id)) append(e);
+  const total = feedOrdered.length, remaining = total - feedRenderedIds.size;
+  if (remaining) {
+    host.insertAdjacentHTML("beforeend", `<div class="feed-more px-4 py-3 text-center border-t border-slate-800"><button type="button" class="feed-load-more bg-slate-800 border border-slate-700 text-sky-300 text-xs px-4 py-2">Load ${Math.min(FEED_CAP, remaining).toLocaleString()} more (${remaining.toLocaleString()} remaining)</button></div>`);
+  } else if (!total) {
+    host.innerHTML = `<div class="px-5 py-8 text-center text-slate-500 text-sm">${searching ? "No events match your search." : "No events match the current filters."}</div>`;
+  }
   if (!host._delegated) {
     host._delegated = true;
     host.addEventListener("click", ev => {
-      const more = ev.target.closest(".feed-load-more");
-      if (more) {
-        const box = $("feedScroll");
-        const top = box.scrollTop;
-        feedLimit += FEED_CAP;
-        renderFeed();
-        box.scrollTop = top;
-        return;
-      }
-      const jump = ev.target.closest(".feed-jump[data-tsms]");
-      if (jump) {
-        ev.stopPropagation();
-        const jr = jump.closest(".feed-row");
-        const e = jr && allEvents[Number(jr.getAttribute("data-eid"))];
-        if (e) locateOnTimeline(e.ts.getTime(), eventRunTarget(e), null, e);
+      if (ev.target.closest(".feed-load-more")) {
+        const top = $("feedScroll").scrollTop;
+        feedLimit += FEED_CAP; renderFeed(); $("feedScroll").scrollTop = top;
         return;
       }
       const row = ev.target.closest(".feed-row");
       if (!row) return;
-      const idx = row.getAttribute("data-idx");
-      const d = host.querySelector(`[data-fdetail="${idx}"]`);
-      if (d) d.classList.toggle("hidden");
+      if (ev.target.closest(".feed-jump")) {
+        ev.stopPropagation();
+        const e = allEvents[Number(row.dataset.eid)];
+        locateOnTimeline(e.ts.getTime(), eventRunTarget(e), null, e);
+      } else toggleFeedDetail(row);
     });
   }
   updateFeedHead();
   const noun = searching ? `match${total === 1 ? "" : "es"}` : `event${total === 1 ? "" : "s"}`;
   $("feedInfo").textContent = total
-    ? `Showing ${shown.length.toLocaleString()} of ${total.toLocaleString()} ${noun}${alertCount ? ` · ${alertCount} alerts` : ""}`
+    ? `Showing ${feedRenderedIds.size.toLocaleString()} of ${total.toLocaleString()} ${noun}${feedAlertCount ? ` · ${feedAlertCount} alerts` : ""}`
     : searching ? "0 matches across all events" : "0 events";
 }
 // Reflect the active sort column/direction on the clickable header (arrow + highlight).
@@ -1213,7 +1225,7 @@ FILTER_SELECTS.forEach(id =>
   $(id).addEventListener("change", applyFilters));
 // editing a date picker becomes the view window — drop any zoom so the typed range takes effect
 ["dateFrom","dateTo"].forEach(id => $(id).addEventListener("change", () => {
-  zoomRange = null; zoomStack = []; windowUnit = "custom"; render();
+  zoomRange = null; windowUnit = "custom"; render();
 }));
 const flowSlider = $("flowSlider");
 flowSlider.addEventListener("input", () => {
@@ -1262,8 +1274,9 @@ $("resetBtn").addEventListener("click", () => {
   flowSlider.value = 0;
   $("flowValue").textContent = "0";
   $("varMin").value = 0; $("varMinVal").textContent = "0%";
-  $("varMax").value = 100; $("varMaxVal").textContent = "100%";
-  zoomStack = []; expandedPrograms.clear(); expandedManual = true;
+  $("varMax").value = 100; $("varMaxVal").textContent = "Any";
+  expandedPrograms.clear(); expandedManual = true;
+  clearTimeout(feedSearchTimer); revealedFeedIds.clear();
   // clear the audit-feed search box + column sort back to the pinned-alarms default
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
   locatedRun = null; locatedTs = null; locatedEid = null; // drop the sticky "located on timeline" highlights
@@ -1278,7 +1291,7 @@ $("windowPresets").addEventListener("click", e => {
   if (!b || !allEvents.length) return;
   setWindowUnitCentered(b.getAttribute("data-win")); // center the new window on the scrubber
 });
-$("zoomOutBtn").addEventListener("click", zoomOut);
+
 $("navPrev").addEventListener("click", () => navShift(-1));
 $("navNext").addEventListener("click", () => navShift(1));
 // keyboard arrows step the window by its own width (ignored when typing in a field)
@@ -1286,6 +1299,7 @@ document.addEventListener("keydown", e => {
   if (!allEvents.length) return;
   const tag = (e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "select" || tag === "textarea") return;
+  if (e.defaultPrevented || e.target.closest("#playhead, #miniMap") || document.querySelector("dialog[open]")) return;
   if (e.key === "ArrowLeft") { e.preventDefault(); navShift(-1); }
   else if (e.key === "ArrowRight") { e.preventDefault(); navShift(1); }
 });
@@ -1296,15 +1310,27 @@ document.addEventListener("keydown", e => {
   $(id).addEventListener("change", render));
 
 // lane checklist dropdowns (Programs / Zones / Mainlines)
+function closeLaneDropdowns() {
+  document.querySelectorAll(".ml-dd").forEach(dd => {
+    dd.querySelector(".ml-dd-panel").classList.add("hidden");
+    dd.querySelector(".ml-dd-btn").setAttribute("aria-expanded", "false");
+  });
+}
 document.querySelectorAll(".ml-dd").forEach(dd => {
   const group = dd.getAttribute("data-group");
   const panel = dd.querySelector(".ml-dd-panel");
+  const button = dd.querySelector(".ml-dd-btn");
+  button.setAttribute("aria-controls", panel.id);
+  button.setAttribute("aria-expanded", "false");
+  dd.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeLaneDropdowns(); button.focus(); e.stopPropagation(); }
+  });
   // open/close (toggle this panel, close others)
-  dd.querySelector(".ml-dd-btn").addEventListener("click", e => {
+  button.addEventListener("click", e => {
     e.stopPropagation();
     const wasHidden = panel.classList.contains("hidden");
-    document.querySelectorAll(".ml-dd-panel").forEach(p => p.classList.add("hidden"));
-    if (wasHidden) panel.classList.remove("hidden");
+    closeLaneDropdowns();
+    if (wasHidden) { panel.classList.remove("hidden"); button.setAttribute("aria-expanded", "true"); }
   });
   // "All" master toggles every item in this group
   panel.querySelector(".ddAll").addEventListener("change", e => {
@@ -1369,13 +1395,15 @@ timeWrap.addEventListener("pointermove", e => {
   if (!scrubbing) return;
   const t = timeAtClientX(e.clientX); if (t != null) setPlayhead(snapTime(t));
 });
-timeWrap.addEventListener("pointerup", e => {
+function endScrub(e) {
   scrubbing = false;
   // commit a final, non-throttled panel update so it matches the resting playhead exactly
   if (scrubPanelRaf) { cancelAnimationFrame(scrubPanelRaf); scrubPanelRaf = null; }
   if (playheadOn && playheadTime != null) updateScrubPanel();
   try { timeWrap.releasePointerCapture(e.pointerId); } catch (_) {}
-});
+}
+timeWrap.addEventListener("pointerup", endScrub);
+timeWrap.addEventListener("pointercancel", endScrub);
 
 /* ---- Overview minimap (full span + draggable view window) ---- */
 const miniMap = $("miniMap");
@@ -1390,7 +1418,7 @@ function miniT2X(t) { return timeToPx(t, miniW(), miniFull()); }
 // set the view to [start,end] (clamped to the full span, min 1s) — a custom, non-aligned window
 function setViewRange(start, end) {
   const { s, e } = clampView(start, end, miniFull());
-  zoomStack = []; windowUnit = "custom"; zoomRange = { start: s, end: e };
+  windowUnit = "custom"; zoomRange = { start: s, end: e };
   render();
 }
 
@@ -1404,7 +1432,7 @@ function setViewRangeLive(start, end) {
   viewRaf = requestAnimationFrame(() => {
     viewRaf = null;
     if (!pendingView) return;
-    zoomStack = []; windowUnit = "custom";
+    windowUnit = "custom";
     zoomRange = { start: pendingView.s, end: pendingView.e };
     pendingView = null;
     renderViewLive(zoomRange); // cheap view-only update; the feed rebuilds on release
@@ -1525,13 +1553,42 @@ function endMiniDrag(e) {
 miniMap.addEventListener("pointerup", endMiniDrag);
 miniMap.addEventListener("pointercancel", endMiniDrag);
 
+
+document.addEventListener("keydown", e => {
+  const button = e.target.closest('[role="button"]');
+  if (button && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault(); e.stopPropagation(); button.click();
+  }
+});
+$("playhead").addEventListener("keydown", e => {
+  if (!playheadOn) return;
+  const r = currentRange(), step = Math.max(1000, (r.end - r.start) / 100);
+  const deltas = { ArrowLeft: -step, ArrowRight: step, PageUp: step * 10, PageDown: -step * 10 };
+  let t = e.key === "Home" ? r.start : e.key === "End" ? r.end
+    : Object.hasOwn(deltas, e.key) ? playheadTime + deltas[e.key] : null;
+  if (t == null) return;
+  e.preventDefault(); e.stopPropagation(); setPlayhead(snapTime(t));
+});
+miniMap.addEventListener("keydown", e => {
+  if (!allEvents.length) return;
+  const r = currentRange(), width = r.end - r.start, center = (r.start + r.end) / 2;
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const delta = width / 10 * (e.key === "ArrowLeft" ? -1 : 1);
+    setViewRange(r.start + delta, r.end + delta);
+  } else if (["+", "=", "-"].includes(e.key)) {
+    const half = width * (e.key === "-" ? 1 : 0.25);
+    setViewRange(center - half, center + half);
+  } else return;
+  e.preventDefault(); e.stopPropagation();
+});
+
 const varMinEl = $("varMin"), varMaxEl = $("varMax");
 function syncVarLabels() {
   // keep min ≤ max
   let lo = parseFloat(varMinEl.value), hi = parseFloat(varMaxEl.value);
   if (lo > hi) { if (document.activeElement === varMinEl) hi = lo, varMaxEl.value = hi; else lo = hi, varMinEl.value = lo; }
   $("varMinVal").textContent = lo + "%";
-  $("varMaxVal").textContent = hi + "%";
+  $("varMaxVal").textContent = hi === 100 ? "Any" : hi + "%";
 }
 [varMinEl, varMaxEl].forEach(el => {
   el.addEventListener("input", syncVarLabels);
@@ -1545,7 +1602,7 @@ function buildReference() {
       .map(([code, name]) => `<tr class="border-t border-slate-800"><td class="px-3 py-1 font-mono text-sky-300 align-top">${code}</td><td class="px-3 py-1 text-slate-300">${escapeHtml(name)}</td></tr>`).join("");
     return `<div>
       <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">${title}</h4>
-      <div class="border border-slate-800 rounded-lg overflow-hidden">
+      <div class="border border-slate-800 overflow-hidden">
         <table class="w-full text-xs"><tbody>${rows}</tbody></table>
       </div></div>`;
   };
@@ -1555,7 +1612,7 @@ function buildReference() {
   ).join("");
   const keyTable = `<div>
     <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Variable Keys (Column E+)</h4>
-    <div class="border border-slate-800 rounded-lg overflow-hidden">
+    <div class="border border-slate-800 overflow-hidden">
       <table class="w-full text-xs">
         <thead><tr class="bg-slate-800/80 text-left text-slate-400"><th class="px-3 py-1.5">Key</th><th class="px-3 py-1.5">Meaning</th><th class="px-3 py-1.5">Unit</th></tr></thead>
         <tbody>${keyRows}</tbody>
@@ -1584,7 +1641,7 @@ function buildReference() {
     .map(([dg, name, key]) => `<tr class="border-t border-slate-800"><td class="px-3 py-1 font-mono text-slate-400 align-top">${dg}</td><td class="px-3 py-1 text-slate-300">${escapeHtml(name)}</td><td class="px-3 py-1 font-mono text-sky-300 align-top">${escapeHtml(key)}</td></tr>`).join("");
   const dgTable = `<details class="group">
     <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Controller object model (Data Groups) <span class="text-slate-500 normal-case">— 3200 MZ spec v19.8.2</span></summary>
-    <div class="border border-slate-800 rounded-lg overflow-hidden mt-2">
+    <div class="border border-slate-800 overflow-hidden mt-2">
       <table class="w-full text-xs">
         <thead><tr class="bg-slate-800/80 text-left text-slate-400"><th class="px-3 py-1.5">DG</th><th class="px-3 py-1.5">Object</th><th class="px-3 py-1.5">Key</th></tr></thead>
         <tbody>${dgRows}</tbody>
@@ -1613,90 +1670,44 @@ function buildReference() {
     codeTable("Object Keys (object-model type — distinct from Column B)", OBJECT_KEY_MAP) +
     dgTable;
 }
-buildReference();
-
 const refModal = $("refModal");
-function openRef() { refModal.classList.remove("hidden"); }
-function closeRef() { refModal.classList.add("hidden"); }
+function openRef() { if (!$("refBody").childElementCount) buildReference(); refModal.showModal(); }
+function closeRef() { refModal.close(); }
 $("refBtn").addEventListener("click", openRef);
 $("refClose").addEventListener("click", closeRef);
 refModal.addEventListener("click", e => { if (e.target === refModal) closeRef(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !refModal.classList.contains("hidden")) closeRef(); });
 
 /* ============================ How-to-use guide (in-app walkthrough) ============================ */
 function buildGuide() {
-  const swatch = (c) => `<span class="inline-block w-2.5 h-2.5 rounded-sm align-middle" style="background:${c}"></span>`;
-  const step = (n, title, body) => `<div class="flex gap-3">
-    <div class="flex-shrink-0 w-6 h-6 rounded-full bg-sky-500 text-slate-900 font-bold text-xs flex items-center justify-center">${n}</div>
-    <div class="min-w-0"><h4 class="text-sm font-semibold text-white mb-1">${title}</h4><div class="text-slate-300 text-xs space-y-1">${body}</div></div>
-  </div>`;
-  const sec = (title, body) => `<div><h4 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">${title}</h4>${body}</div>`;
-  const li = (items) => `<ul class="list-disc pl-5 space-y-1 text-slate-300 text-xs">${items.map(i => `<li>${i}</li>`).join("")}</ul>`;
-
-  $("guideBody").innerHTML =
-    `<p class="text-slate-300 text-xs leading-relaxed">This tool turns a Baseline controller event log
-       (<span class="font-mono text-sky-300">Evnt_yyyyMM.csv</span>) into a visual timeline so you can see
-       <em>what ran, when, for how long, scheduled or manual, and why anything stopped</em>.
-       <span class="text-emerald-400">Everything stays in your browser</span> — your file is never uploaded anywhere.</p>` +
-
-    sec("Getting started", `<div class="space-y-3">
-      ${step(1, "Load your log", `Drag a <span class="font-mono text-sky-300">.csv</span> onto the <b>Data Source</b> box (top-left) or click it to browse. The dashboard fills in instantly.`)}
-      ${step(2, "Read the timeline", `The <b>Execution Timeline</b> shows one bar per run, grouped into lanes for mainlines, manual runs, programs and zones.
-        Bar colors: ${swatch("#22c55e")} scheduled &nbsp; ${swatch("#f59e0b")} manual (amber border + “M”) &nbsp; ${swatch("#ef4444")} stopped early by a pause/alarm.
-        The <b>Manual Runs</b> (<span class="font-mono">MR</span>) lane gathers every run a person started, whether or not you've picked its zone in the <b>Zones</b> dropdown — click the label to show or hide the individual zones.
-        Selected zones keep a row even when they have no runtime in the current window. Blocking alarms, pauses, disables, skips/drops, and configuration errors appear as clickable diamonds on that zone’s row.
-        A hatched bar marked “ended early” started but never logged a finish, so its end is inferred from the controller’s run-list.
-        A <b>cycle-and-soak</b> zone shows solid watering segments with dimmed/striped <b>soak</b> gaps between them (toggle <b>Soak</b> off to see it as one continuous bar). <b>Click any bar</b> to jump the Activity Audit Feed to that run’s raw start line (it scrolls, expands and flashes it).`)}
-      ${step(3, "Move around", `Use the <b>minimap</b> (drag the bright window across the full span — it also shows a small amber marker mirroring the scrubber's position) or the <b>Window</b> presets
-        (<span class="font-mono">All · Month · Week · Day · Hour · Min · Sec</span>), which <b>centre on the scrubber</b> so zooming in or out keeps that moment in view. <b>◀ / ▶</b> step one window at a time; <b>Back</b> undoes a zoom; arrow keys <b>← / →</b> also step.`)}
-      ${step(4, "Inspect a moment", `Keep <b>Scrubber</b> on and drag the playhead — the “At Playhead” panel on the right lists exactly what was running at that instant.
-        Each run is tagged with what was true of it there: <b>· manual</b>, <b>· stopped early</b>, <b>· soaking</b>, and <b>· over</b> when the playhead sits on the run's final instant (park on a run's end — <b>Snap</b> takes you exactly there — and it stays listed instead of disappearing).
-        <b>Click any item in that panel</b> — a running program/zone/mainline or an alert — to move the scrubber right onto it, ring its run bar on the timeline, and open its raw log line in the Activity Audit Feed. <b>Snap</b> makes the playhead jump to run start/stop edges.`)}
-      ${step(5, "Dig into the detail", `Toggle <b>Flow</b> to overlay the hydraulic flow/pressure chart. Flow is read from Actual (AC) / Expected (EX) values the controller logs during zone runs with flow monitoring — if a log has none, a <b>“no flow data”</b> note appears next to the toggle and the chart says so (for flow with no zones running, check the FlowStation / flow report). Toggle <b>Events</b> to add a separate <b>Interventions &amp; Alerts</b> lane — click any marker for the reason. Scroll down to the <b>Activity Audit Feed</b> for every raw event; click a row to expand its raw detail, or its <b>↗</b> button to come back up to the timeline at that moment — the scrubber lands on the event and what it points at keeps an <b>amber ring</b> until your next jump (if that run's lane was hidden, it's switched on for you; an event with no lane rings its red alert tick instead).
-        The button names its destination and only appears when there's something to point at: <b>↗ timeline</b> for runs and alarms, <b>↗ events</b> for pauses/disables/config changes — which are drawn only on the <b>Interventions &amp; Alerts</b> timeline, so that jump switches it on for you. Most raw rows (run-list heartbeats, sensor readings) appear on no timeline and get no button rather than a jump that highlights nothing. The <b>search box</b> finds events across the whole log (space-separated terms all must match), and <b>clicking a column header</b> sorts the whole matching log. The feed renders 1,500 rows at a time for responsiveness; use <b>Load 1,500 more</b> until every matching row is shown. <b>Hover almost anything</b> — toggles, stats, legend swatches, filters — for a tooltip explaining it.`)}
-    </div>`) +
-
-    sec("The panes, top to bottom", li([
-      `<b>Stat strip</b> — events in the current window, active alerts, and run count.`,
-      `<b>Execution Timeline</b> — the swimlane of runs + minimap + (optional) flow chart.`,
-      `<b>Interventions &amp; Alerts</b> — pauses, disables, status changes, and alarms, with the “why”.`,
-      `<b>Activity Audit Feed</b> — the full searchable event list, loaded in 1,500-row batches; alarms are pinned on top.`,
-    ])) +
-
-    sec("Filters (left sidebar)", li([
-      `<b>Date / Time Range</b> — limit everything to a From–To window.`,
-      `<b>Show on timeline</b> — pick which <b>Programs</b>, <b>Zones</b> and <b>Mainlines</b> get their own lanes (zones start empty — choose the ones you care about; selected zones stay visible even without runtime; you don't need them to see manual runs).`,
-      `<b>Run type</b> — show/hide ${swatch("#22c55e")} scheduled and ${swatch("#f59e0b")} manual runs. <b>Manual</b> also toggles the timeline's <b>Manual Runs</b> lane. <b>Alert markers</b> toggles the ${swatch("#ef4444")} alarm ticks.`,
-      `<b>Human audit only</b> — keep just the events a <i>person</i> triggered (User / Operator / Programmer / Administrator) and hide everything the controller did on its own: a “who touched this?” view. Note this filters the <i>events</i> and Audit Feed, not the run bars — it won't isolate manual runs, because a run's stop event is controller-generated and gets hidden. Manual runs already have their own <b>Manual Runs</b> lane on the timeline.`,
-      `<b>SubStation</b> — isolate one substation.`,
-      `<b>Flow Variance |AC−EX| %</b> — appears when the file has flow; filter to events whose commanded vs. expected flow differ by a chosen range.`,
-      `<b>Show Alerts Only</b> — feed shows alarms/errors only.`,
-      `<b>More filters</b> — narrow by Category, Action, Trigger/Actor, or a minimum flow rate. These slice the <i>Audit Feed</i>; they share the set that draws the timeline, so a single selection can empty it: only <b>Zone / Program / Mainline</b> categories have lanes (others are feed-only), and a run bar needs <i>both</i> its start and its stop event, which usually differ in action and trigger. To shape the timeline instead, use <b>Show on timeline</b> (lanes) and <b>Run type</b>.`,
-      `<b>Advanced → low-level system events</b> — off by default; turn on to include substation, network, two-wire and message chatter.`,
-      `<b>Reset Filters</b> — back to the default view.`,
-    ])) +
-
-    sec("Exporting & reference", li([
-      `<b>Controller ID</b> (top-right) is stamped onto the printed report.`,
-      `<b>Print / Save as PDF</b> opens your browser's print dialog for the current dashboard view — choose <i>Save as PDF</i> as the destination to export a file (or send it to a printer).`,
-      `<b>Reference</b> opens the code glossary — what every Category/Action/Trigger, status, cause and message code means.`,
-    ]));
+  $("guideBody").innerHTML = `
+    <p>Open a controller CSV to inspect run history, flow and events. Files are processed in this browser. Feedback is optional and previews exactly which diagnostics it includes.</p>
+    <h4 class="font-semibold text-white">Load and navigate</h4>
+    <p>Choose a CSV (up to 20 MB) or drop it onto Data Source. Invalid imports retain the previous log. The import status reports rejected rows. Times use the controller's wall clock consistently across browsers; offsets do not shift the displayed clock.</p>
+    <p>Window presets center on the playhead. Previous/Next or arrow keys move one window width. Drag the minimap to move/resize the view. Focus the minimap and use arrows to pan or +/− to zoom. Date fields change the timeline window, not the feed.</p>
+    <h4 class="font-semibold text-white">Runs and playhead</h4>
+    <p>Programs and mainlines start selected; zones start empty. Expand a program to see its zones, including ones without runtime. Manual runs have a separate MR lane. Scheduled bars are green, manual runs carry an amber M, and terminated runs are red/hatched. Soak splits show watering and valve-off gaps; inferred endings remain estimates.</p>
+    <p>The run count and At Playhead panel use visible logical runs, counting duplicates and soak segments once. Click a bar or playhead item to reveal its start event. Focus the playhead and use arrows, Page Up/Down, Home or End to inspect time; Snap selects nearby run boundaries.</p>
+    <h4 class="font-semibold text-white">Events and filters</h4>
+    <p>Category, action, actor, substation, human, alert, flow and variance filters select events in the feed, alert markers and event statistics. They do not change reconstructed runs or hydraulic readings. Substation matches an event's SN/SB field; missing device topology is not inferred. Use lane and run-type controls to select runs.</p>
+    <p>The feed omits routine start/done rows by default; search includes them and matches every entered word across the complete filtered log. Sort by a column; load more to append the next 1,500 rows. Expand a row to create its detail and reconstructed CSV. Timeline markers reveal the exact event even beyond a loaded batch; a reveal clears search and includes that event outside current filters.</p>
+    <p>Flow plots numeric AC/EX readings in L/min and pressure PR in kPa. Message priority is not pressure. Variance's maximum endpoint is unbounded so extreme deviations remain visible. Events shows intervention markers; each marker opens its exact row.</p>
+    <h4 class="font-semibold text-white">Keyboard, export and reference</h4>
+    <p>Tab reaches upload, lanes, bars, markers, feed details and playhead controls; Enter or Space activates them. Dialogs contain keyboard focus and Escape returns focus to their opener. On narrow screens the playhead panel follows the dashboard.</p>
+    <p>Print / Save as PDF exports the current dashboard view with Controller ID. It is a snapshot, including the currently visible feed area, not a full-log export. Reference explains vendor categories, actions, fields and enumerations.</p>`;
 }
-buildGuide();
 
 const guideModal = $("guideModal");
-function openGuide() { guideModal.classList.remove("hidden"); }
-function closeGuide() { guideModal.classList.add("hidden"); }
+function openGuide() { if (!$("guideBody").childElementCount) buildGuide(); guideModal.showModal(); }
+function closeGuide() { guideModal.close(); }
 $("guideBtn").addEventListener("click", openGuide);
 $("guideClose").addEventListener("click", closeGuide);
 guideModal.addEventListener("click", e => { if (e.target === guideModal) closeGuide(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !guideModal.classList.contains("hidden")) closeGuide(); });
 
 /* ============================ Report export (native browser print → Save as PDF) ============================ */
 // We hand the dashboard to the browser's own print engine (a `@media print` stylesheet isolates
 // `#dashboard`; see styles.css) instead of rasterizing it with html2canvas — the latter froze the
-// tab on large logs (main-thread bitmap of the whole DOM at 2× scale). Native print is instant, never
-// freezes, prints selectable text, and has no canvas-size ceiling.
+// tab on large logs (main-thread bitmap of the whole DOM at 2× scale). Native print keeps text
+// selectable and avoids building a second full-dashboard bitmap; output remains a view snapshot.
 const PRINT_WIDTH_PX = 1024;   // fits the A4-landscape printable width (~1062px @ 96dpi with 8mm margins)
 
 $("pdfBtn").addEventListener("click", () => {

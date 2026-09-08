@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "./";
 
 /* ============================================================================
    Custom app styles (moved verbatim from the original index.html <style> block).
@@ -6,39 +8,28 @@
    ========================================================================== */
 body { background-color: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 
-/* Squared aesthetic — remove all rounded corners app-wide. !important is needed to beat
-   Tailwind rounded-* utilities and inline border-radius in JS templates (swatches/dots/bars).
-   The scrollbar thumb is a pseudo-element `*` can't match, so it's zeroed explicitly below. */
-*, *::before, *::after { border-radius: 0 !important; }
+/* Keep browser controls and generated elements square. */
+*, *::before, *::after { border-radius: 0; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 0; }
+::-webkit-scrollbar-thumb { background: #475569;  }
 ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-.detail-row td { background-color: #0b1220; }
 input[type="range"] { accent-color: #38bdf8; }
-.sortable { cursor: pointer; user-select: none; }
-.sortable:hover { color: #38bdf8; }
-.data-row { cursor: pointer; }
-.data-row:hover { background-color: #1e293b; }
 #dropZone.dragover { border-color: #38bdf8; background-color: #1e293b; }
-@keyframes zoomIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
-.zoom-anim.playing { animation: zoomIn 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
 .help-chip { cursor: help; }
 .help-chip:hover { border-color: #38bdf8; }
 #refModal { backdrop-filter: blur(2px); }
 @keyframes rawFlash { 0% { background-color: rgba(56,189,248,0.45); } 100% { background-color: rgba(56,189,248,0.12); } }
-tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px 0 0 #38bdf8; animation: rawFlash 0.9s ease-out; }
-.tl-track { position: relative; height: 22px; background: rgba(148,163,184,0.06); border-radius: 4px; }
-.tl-bar { position: absolute; top: 2px; height: 18px; border-radius: 4px; cursor: pointer; overflow: hidden;
+.tl-track { position: relative; height: 22px; background: rgba(148,163,184,0.06);  }
+.tl-bar { position: absolute; top: 2px; height: 18px;  cursor: pointer; overflow: hidden;
   font-size: 10px; line-height: 18px; color: #0b1220; font-weight: 600; padding: 0 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 .tl-bar:hover { outline: 2px solid #e2e8f0; }
 /* "locate on timeline" flash — a spreading amber ring matching the scrubber playhead (#fbbf24) */
 @keyframes barHit { from { box-shadow: 0 0 0 3px #fbbf24, 0 0 10px 2px rgba(251,191,36,0.9); } to { box-shadow: 0 0 0 3px rgba(251,191,36,0), 0 0 10px 2px rgba(251,191,36,0); } }
 .tl-bar.tl-hit { animation: barHit 1.3s ease-out; z-index: 6; }
-.tl-ongoing { background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.18) 5px, rgba(0,0,0,0.18) 10px); }
-.tl-bar.clip-l { border-left: 3px solid #e2e8f0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
-.tl-bar.clip-r { border-right: 3px solid #e2e8f0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tl-bar.clip-l { border-left: 3px solid #e2e8f0;   }
+.tl-bar.clip-r { border-right: 3px solid #e2e8f0;   }
 /* per-run status texture (used over a zone's own color) */
 .run-hatch { background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.28) 4px, rgba(0,0,0,0.28) 8px); }
 /* soak segment of a cycle-and-soak zone run: keep the zone hue but read as "not watering" (dimmed + striped) */
@@ -58,9 +49,9 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 /* interventions & alerts timeline: discrete diamond markers per event */
 .ev-track { position: relative; height: 20px; margin-bottom: 3px; }
 .ev-mark { position: absolute; top: 50%; width: 9px; height: 9px; transform: translate(-50%, -50%) rotate(45deg);
-  border-radius: 2px; cursor: pointer; z-index: 3; }
+   cursor: pointer; z-index: 3; }
 .ev-mark:hover { outline: 2px solid #e2e8f0; z-index: 5; }
-.zone-block-mark { position:absolute; top:50%; width:9px; height:9px; padding:0; border:0; border-radius:2px;
+.zone-block-mark { position:absolute; top:50%; width:9px; height:9px; padding:0; border:0;
   transform:translate(-50%, -50%) rotate(45deg); cursor:pointer; z-index:5; }
 .zone-block-mark:hover, .zone-block-mark:focus-visible { outline:2px solid #e2e8f0; outline-offset:2px; }
 /* Steady amber ring left on the diamond a feed "↗ events" jump pointed at — stays until the next jump,
@@ -70,15 +61,15 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 /* lane checklist dropdowns */
 .ml-dd { position: relative; }
 .ml-dd-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.ml-dd-panel { position: absolute; z-index: 30; left: 0; right: 0; margin-top: 2px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+.ml-dd-panel { position: absolute; z-index: 30; left: 0; right: 0; margin-top: 2px; background: #0f172a; border: 1px solid #334155;  padding: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
 .ml-dd-list { max-height: 180px; overflow-y: auto; }
-.ml-dd-list label, .ml-dd-all { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.ml-dd-list label, .ml-dd-all { display: flex; align-items: center; gap: 6px; padding: 2px 4px;  cursor: pointer; }
 .ml-dd-list label:hover, .ml-dd-all:hover { background: #1e293b; }
 /* scrubber playhead */
 #playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fbbf24; box-shadow: 0 0 6px #fbbf24; z-index: 7; cursor: ew-resize; display: none; }
-#playhead::before { content: ""; position: absolute; top: -1px; left: -5px; width: 12px; height: 8px; background: #fbbf24; border-radius: 2px; }
+#playhead::before { content: ""; position: absolute; top: -1px; left: -5px; width: 12px; height: 8px; background: #fbbf24;  }
 /* live "exact time under the playhead" pill — tracks the line as it's dragged */
-#playheadTime { position: absolute; top: -22px; left: 1px; transform: translateX(-50%); white-space: nowrap; font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 4px; background: #fbbf24; color: #1e293b; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.4); pointer-events: none; z-index: 8; }
+#playheadTime { position: absolute; top: -22px; left: 1px; transform: translateX(-50%); white-space: nowrap; font-size: 11px; line-height: 1; padding: 3px 6px;  background: #fbbf24; color: #1e293b; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.4); pointer-events: none; z-index: 8; }
 #timeWrap.scrub-on { cursor: ew-resize; -webkit-user-select: none; user-select: none; }
 /* reserve space for the scrubber drawer so it never overlaps the dashboard */
 #appRoot.scrub-open { padding-right: 300px; }
@@ -88,8 +79,8 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 #miniWindow { cursor: grab; }
 #miniWindow.dragging { cursor: grabbing; }
 .mini-handle { position: absolute; top: 0; bottom: 0; width: 6px; background: #38bdf8; cursor: ew-resize; }
-.mini-handle[data-edge="L"] { left: 0; border-radius: 5px 0 0 5px; }
-.mini-handle[data-edge="R"] { right: 0; border-radius: 0 5px 5px 0; }
+.mini-handle[data-edge="L"] { left: 0;  }
+.mini-handle[data-edge="R"] { right: 0;  }
 /* swimlane run colors */
 .run-scheduled { background:#22c55e; }
 .run-manual { background:#f59e0b; }
@@ -97,7 +88,7 @@ tr.raw-hit > td { background-color: rgba(56,189,248,0.12); box-shadow: inset 3px
 /* manual run: amber inset border (survives any background fill) + small "M" badge */
 .tl-bar.run-manual-mark { box-shadow: inset 0 0 0 2px #f59e0b; }
 .run-manual-badge { position:absolute; right:2px; bottom:1px; z-index:4; pointer-events:none;
-  font-size:8px; line-height:1; font-weight:700; color:#1f2937; background:#f59e0b; border-radius:3px; padding:1px 3px; }
+  font-size:8px; line-height:1; font-weight:700; color:#1f2937; background:#f59e0b;  padding:1px 3px; }
 /* Steady amber ring left on the located run after the arrival pulse fades — stays until the next jump.
    Declared last: .run-soak (box-shadow:none) and .run-manual-mark (inset border) have equal specificity
    and would otherwise win and drop the ring; the manual case re-states its inset border alongside. */
@@ -160,4 +151,20 @@ details > summary::-webkit-details-marker { display:none; }
 
   /* don't slice a card (stat strip / timeline / feed) across a page boundary */
   #dashboard > div { break-inside: avoid; }
+}
+/* Native controls keep keyboard and touch behavior without extra widgets. */
+dialog::backdrop { background: rgba(0,0,0,.7); }
+dialog:not([open]) { display: none; }
+:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+#dropZone { display: block; }
+#dropZone:focus-within { outline: 2px solid #38bdf8; }
+.ev-mark, .alert-mark { padding: 0; }
+#timeWrap.scrub-on, #miniMap { touch-action: none; }
+@media (max-width: 1023px) {
+  #appRoot.scrub-open { padding-right: 0; }
+  #scrubPanel { position: static; width: auto; height: auto; max-height: 480px; margin: 16px; }
+  main { min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; }
 }

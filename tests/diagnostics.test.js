@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { buildDiagnostics } from "../src/diagnostics.js";
 import { parseRow } from "../src/parse.js";
 
-// buildDiagnostics is the only part of the feedback report derived from the loaded log, so it is
-// where a privacy leak would realistically be introduced. tests/feedback.test.js proves no row
-// content survives into the serialized report; this file pins the SHAPE, so adding a field to the
+// buildDiagnostics reduces event arrays to counts; selected filter values remain visible.
+// tests/feedback.test.js checks those boundaries; this file pins the SHAPE, so adding a field to the
 // payload is a deliberate, reviewed act rather than something that rides along unnoticed.
 
 const EVENTS = [

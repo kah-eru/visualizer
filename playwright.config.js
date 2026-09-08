@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// One smoke test over the BUILT app (see e2e/smoke.spec.js). This is the only automated check that
+// Browser regressions over the BUILT app (see e2e/). This is the automated layer that
 // exercises the DOM render pipeline end to end — the unit suite covers the pure modules in Node and
 // can't see wiring, import order, or a Chart.js/PapaParse upgrade breaking the page.
 //
@@ -20,13 +20,13 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "html",
   use: {
     baseURL: "http://localhost:4173/visualizer/",
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "npm run preview",
     url: "http://localhost:4173/visualizer/",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

@@ -125,11 +125,11 @@ describe("buildRunIntervals — zone mode (ZN WT → DN)", () => {
     expect(z1.end).toBe(GLOBAL_END);
   });
 
-  it("falls back to MV/PM shutdown for a no-DN zone never seen in a run-list (Tier 2)", () => {
+  it("falls back to a linked MV/PM shutdown for a no-DN zone never seen in a run-list (Tier 2)", () => {
     const evs = [
-      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "PG=9")),
-      parseRow(row("06:08:00", "MV", "DN", "SY", "ZN=204")),
-      parseRow(row("06:08:00", "PM", "DN", "SY", "ZN=237")),
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "PG=9", "ML=1")),
+      parseRow(row("06:08:00", "MV", "DN", "SY", "ZN=204", "ML=1")),
+      parseRow(row("06:08:00", "PM", "DN", "SY", "ZN=237", "ML=1")),
     ];
     const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
     const z1 = runs.find(r => r.key === "1");
@@ -268,6 +268,54 @@ describe("mergeSpans", () => {
       { start: 100, end: 200, keys: ["12"] },
       { start: 300, end: 400, keys: ["50"] },
     ]);
+  });
+
+  it("separates a missing-DONE session from a later completed session after heartbeat disappearance", () => {
+    const evs = [
+      parseRow(row("08:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("08:01:00", "ZN", "RL", "SY", "ZN=1")),
+      parseRow(row("08:02:00", "ZN", "RL", "SY", "ZN=2")),
+      parseRow(row("09:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("09:05:00", "ZN", "DN", "SY", "ZN=1")),
+    ];
+    const runs = buildRunIntervals(evs.reverse(), "zone", GLOBAL_END);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({ start: ms("08:00:00"), end: ms("08:01:00"), inferred: true });
+    expect(runs[1]).toMatchObject({ start: ms("09:00:00"), end: ms("09:05:00"), inferred: false });
+  });
+
+  it("keeps a known soak open while absent from heartbeats, then resumes its water segment", () => {
+    const evs = [
+      parseRow(row("08:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("08:01:00", "ZN", "RL", "SY", "ZN=1")),
+      parseRow(row("08:02:00", "ZN", "SO", "SY", "ZN=1")),
+      parseRow(row("08:03:00", "ZN", "RL", "SY", "ZN=2")),
+    ];
+    expect(buildRunIntervals(evs, "zone", GLOBAL_END)[0]).toMatchObject({ ongoing: true, end: GLOBAL_END });
+    evs.push(parseRow(row("08:10:00", "ZN", "WT", "SY", "ZN=1")), parseRow(row("08:15:00", "ZN", "DN", "SY", "ZN=1")));
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].segments).toHaveLength(3);
+    expect(runs[0].end).toBe(ms("08:15:00"));
+  });
+
+  it("does not attribute unrelated or unknown-topology supply shutdowns to an open zone", () => {
+    for (const identity of [[], ["ML=2"]]) {
+      const evs = [parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "ML=1")),
+        parseRow(row("06:08:00", "MV", "DN", "SY", "ZN=204", ...identity))];
+      expect(buildRunIntervals(evs, "zone", GLOBAL_END)[0]).toMatchObject({ ongoing: true, inferred: false, end: GLOBAL_END });
+    }
+  });
+
+  it("groups inherited-property identifiers safely in every mode", () => {
+    for (const key of ["constructor", "__proto__", "toString"]) {
+      for (const [mode, cat, start, stop, field] of [["program", "PG", "SR", "DN", "PG"], ["zone", "ZN", "WT", "DN", "ZN"], ["mainline", "ML", "RN", "OF", "ML"]]) {
+        const runs = buildRunIntervals([parseRow(row("06:00:00", cat, start, "SY", `${field}=${key}`)),
+          parseRow(row("06:05:00", cat, stop, "SY", `${field}=${key}`))], mode, GLOBAL_END);
+        expect(runs).toHaveLength(1);
+        expect(runs[0]).toMatchObject({ key, ongoing: false, end: ms("06:05:00") });
+      }
+    }
   });
 
   it("merges overlapping runs into one span and collects both zones", () => {

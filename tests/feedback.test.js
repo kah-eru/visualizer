@@ -2,10 +2,8 @@ import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { parseRow } from "../src/parse.js";
 import { buildDiagnostics } from "../src/diagnostics.js";
 
-// The project's #1 hard rule: CSV/event-log CONTENTS must never leave the browser. The feedback
-// report may carry only filename, counts, and filter/view state. assembleReport() in feedback.js
-// is the single place the outgoing report is built (buildPayload/send/download all go through it),
-// so pinning it here turns the privacy promise into a CI-gated invariant.
+// Event arrays must not enter the report. Filenames, selected filter values and
+// captured error text are intentional allowances, shown for user review.
 //
 // The chain under test is the REAL one on both halves: buildDiagnostics (the pure shaping behind
 // app.js's getDiagnostics — the only part of the report derived from the loaded log) feeds the real
@@ -14,15 +12,17 @@ import { buildDiagnostics } from "../src/diagnostics.js";
 //
 // feedback.js (via errors.js) touches window at import time, and assembleReport reads
 // location/navigator/window — provide the same minimal shims errors.test.js uses (no jsdom dep).
-let assembleReport, pushError, getErrorLog;
+let assembleReport, initFeedback, pushError, getErrorLog;
 beforeAll(async () => {
+  vi.stubEnv("VITE_FEEDBACK_ENDPOINT", "https://feedback.example.test/submit");
+  vi.stubEnv("VITE_WEB3FORMS_KEY", "");
   globalThis.window = { addEventListener() {}, innerWidth: 1280, innerHeight: 720 };
   globalThis.location = { href: "http://localhost/visualizer/" };
   if (typeof globalThis.navigator === "undefined" || !globalThis.navigator.userAgent) {
     try { Object.defineProperty(globalThis, "navigator", { value: { userAgent: "test-ua" }, configurable: true }); } catch { /* Node ≥21 exposes a real navigator — fine */ }
   }
   ({ getErrorLog, pushError } = await import("../src/errors.js"));
-  ({ assembleReport } = await import("../src/feedback.js"));
+  ({ assembleReport, initFeedback } = await import("../src/feedback.js"));
 });
 
 // Synthetic rows shaped like real controller log lines, parsed by the REAL parser so the events
@@ -63,10 +63,10 @@ function diagnosticsFor(events) {
   });
 }
 
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-describe("feedback report privacy invariant", () => {
-  it("the serialized report contains no CSV row content — raw lines, pair values, or extras", () => {
+describe("feedback report privacy boundaries", () => {
+  it("event arrays do not contribute raw lines, pair values, or extras", () => {
     // Freeze the clock on a deliberately hostile instant — 15:47:47.477, every field packed with the
     // digits the markers above are built from — so the timestamp-collision case the old fixture tripped
     // over is covered on EVERY run instead of once an hour. capturedAt and the error's time both use it.
@@ -98,5 +98,64 @@ describe("feedback report privacy invariant", () => {
     expect(Object.keys(report).sort()).toEqual(
       ["buildTime", "capturedAt", "diagnostics", "email", "errors", "message", "url", "userAgent", "version", "viewport"].sort()
     );
+  });
+
+  it("omits URL query and fragment data", () => {
+    location.href = "https://example.com/visualizer/?customer=private#secret";
+    expect(assembleReport({}).url).toBe("https://example.com/visualizer/");
+    location.href = "http://localhost/visualizer/";
+  });
+
+  it("preserves explicit user text, selected filters and errors for preview", () => {
+    const diagnostics = buildDiagnostics({ filters: { substation: "SECRETSN99" } });
+    const report = assembleReport({
+      message: "AC=4747.47",
+      diagnostics,
+      errors: [{ message: "Could not parse TX=SECRET-VALVE-FAILURE" }],
+    });
+    expect(report.message).toBe("AC=4747.47");
+    expect(report.diagnostics.filters.substation).toBe("SECRETSN99");
+    expect(report.errors[0].message).toContain("SECRET-VALVE-FAILURE");
+  });
+
+  it("sends only previewed diagnostics, renders failures as text, and aborts stalled requests", async () => {
+    vi.useFakeTimers();
+    const elements = new Map();
+    function element(id) {
+      if (!elements.has(id)) elements.set(id, {
+        value: "", style: {}, handlers: {}, open: false,
+        setAttribute() {}, appendChild() {}, focus() {},
+        addEventListener(type, fn) { this.handlers[type] = fn; },
+        querySelector: element,
+        showModal() { this.open = true; },
+        close() { this.open = false; this.handlers.close?.(); },
+      });
+      return elements.get(id);
+    }
+    vi.stubGlobal("document", {
+      createElement: element, getElementById() { return null; },
+      body: element("body"), activeElement: element("opener"),
+    });
+    let serial = "previewed-serial";
+    initFeedback({ getDiagnostics: () => ({ serial }) });
+    element("button").handlers.click();
+    serial = "unseen-serial";
+    const fetchMock = vi.fn().mockRejectedValue(new Error("<img src=x onerror=alert(1)>"));
+    vi.stubGlobal("fetch", fetchMock);
+    await element('[data-act="send"]').handlers.click();
+    const report = JSON.parse(JSON.parse(fetchMock.mock.calls[0][1].body)._report);
+    expect(report.diagnostics.serial).toBe("previewed-serial");
+    expect(element("#fbStatus").textContent).toContain("<img src=x onerror=alert(1)>");
+    expect(element("#fbStatus").innerHTML).toBeUndefined();
+    fetchMock.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("Timed out", "AbortError")));
+    }));
+    const pending = element('[data-act="send"]').handlers.click();
+    expect(element('[data-act="send"]').disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await pending;
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+    expect(element('[data-act="send"]').disabled).toBe(false);
+    expect(element("#fbStatus").textContent).toContain("Download report");
   });
 });

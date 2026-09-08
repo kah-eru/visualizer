@@ -5,54 +5,27 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Allow the workflow to publish to Pages.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# One deploy at a time; don't cancel an in-progress release.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  # Run the unit tests first; the build (and therefore the deploy) only runs if they pass,
-  # so a broken change can't ship to the live Pages site.
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run test:run
-
-  build:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Build
-        env:
-          # Set this repo secret to your Web3Forms access key to enable the feedback button's
-          # "Send" path. If unset, the build still works — feedback falls back to download.
-          VITE_WEB3FORMS_KEY: ${{ secrets.VITE_WEB3FORMS_KEY }}
-        run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
+  verify:
+    uses: ./.github/workflows/ci.yml
+    with:
+      publish-artifact: true
+    secrets:
+      VITE_WEB3FORMS_KEY: ${{ secrets.VITE_WEB3FORMS_KEY }}
 
   deploy:
-    needs: build
+    needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

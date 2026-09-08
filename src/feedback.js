@@ -3,9 +3,9 @@
 
    Injects a "Feedback" button into the header and a modal. The report bundles:
    app version + build time, browser/viewport/URL, the captured error log
-   (from errors.js), and an app-state snapshot (getDiagnostics). It NEVER
-   includes CSV row content — only the filename, counts, and filter/view state,
-   and the payload is shown to the user before sending.
+   (from errors.js), and an app-state snapshot (getDiagnostics). Event arrays
+   are excluded, but filenames, selected filters and captured error text may
+   contain log values. The payload is previewed and only sent on user action.
 
    Submits to VITE_FEEDBACK_ENDPOINT (a Formspree form) via fetch; if that's not
    configured or the POST fails, falls back to downloading the report as a file.
@@ -24,6 +24,8 @@ const WEB3FORMS_URL = "https://api.web3forms.com/submit";
 
 let getDiagnostics = () => ({});
 let modal = null;
+let opener = null;
+let previewPayload = null;
 
 export function initFeedback(opts = {}) {
   if (typeof opts.getDiagnostics === "function") getDiagnostics = opts.getDiagnostics;
@@ -37,7 +39,7 @@ function injectButton() {
   btn.id = "feedbackBtn";
   btn.type = "button";
   btn.className =
-    "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 rounded-md transition-colors flex items-center gap-2";
+    "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2";
   btn.setAttribute("data-html2canvas-ignore", "true");
   btn.innerHTML =
     '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-3.5-7.1L21 3v6h-6"/></svg>Feedback';
@@ -49,35 +51,36 @@ function injectButton() {
 }
 
 function buildModal() {
-  modal = document.createElement("div");
+  modal = document.createElement("dialog");
   modal.id = "feedbackModal";
-  modal.className = "hidden fixed inset-0 z-50 bg-black/60 p-4 sm:p-8";
+  modal.className = "w-full max-w-2xl m-auto p-4 text-slate-200 bg-transparent border-0";
+  modal.setAttribute("aria-labelledby", "feedbackTitle");
   modal.setAttribute("data-html2canvas-ignore", "true");
   modal.innerHTML = `
-    <div class="mx-auto max-w-2xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl flex flex-col" style="max-height:90vh;">
+    <div class="mx-auto max-w-2xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col" style="max-height:90vh;">
       <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
-        <h3 class="text-base font-bold text-white">Send Feedback / Report a Problem</h3>
-        <button data-act="close" class="text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/60 rounded-md px-2 py-1 text-sm transition-colors">✕ Close</button>
+        <h3 id="feedbackTitle" class="text-base font-bold text-white">Send Feedback / Report a Problem</h3>
+        <button data-act="close" class="text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/60 px-2 py-1 text-sm transition-colors">✕ Close</button>
       </div>
       <div class="p-5 overflow-y-auto space-y-4 text-sm">
         <div>
           <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1" for="fbMessage">What happened? (optional)</label>
-          <textarea id="fbMessage" rows="4" placeholder="Describe the bug or suggestion…" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500"></textarea>
+          <textarea id="fbMessage" rows="4" placeholder="Describe the bug or suggestion…" class="w-full bg-slate-800 border border-slate-700 px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500"></textarea>
         </div>
         <div>
           <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1" for="fbEmail">Your email (optional, so we can reply)</label>
-          <input id="fbEmail" type="email" placeholder="you@example.com" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500">
+          <input id="fbEmail" type="email" placeholder="you@example.com" class="w-full bg-slate-800 border border-slate-700 px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500">
         </div>
-        <details class="border border-slate-800 rounded-md">
-          <summary class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400 cursor-pointer">Diagnostic info included (no CSV data) ▾</summary>
+        <details class="border border-slate-800">
+          <summary class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400 cursor-pointer">Preview diagnostic report ▾</summary>
           <pre id="fbPayload" class="px-3 py-2 text-[11px] text-slate-400 font-mono whitespace-pre-wrap break-all max-h-60 overflow-y-auto"></pre>
         </details>
-        <p class="text-xs text-slate-500">Your event-log <strong>contents are never sent</strong> — only the filename, counts, current filters, and any error messages shown above.</p>
-        <div id="fbStatus" class="text-sm"></div>
+        <p class="text-xs text-slate-500">Reports exclude event arrays. Filenames, selected filters, and captured error messages may contain values from your log. Review the diagnostic preview before sending or downloading. Nothing is sent automatically.</p>
+        <div id="fbStatus" class="text-sm" role="status"></div>
       </div>
       <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800">
-        <button data-act="download" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-4 py-2 rounded-md transition-colors">Download report</button>
-        <button data-act="send" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-semibold text-sm px-4 py-2 rounded-md transition-colors">Send</button>
+        <button data-act="download" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm px-4 py-2 transition-colors">Download report</button>
+        <button data-act="send" class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-semibold text-sm px-4 py-2 transition-colors">Send</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -86,17 +89,11 @@ function buildModal() {
   modal.querySelector('[data-act="download"]').addEventListener("click", downloadReport);
   modal.querySelector('[data-act="send"]').addEventListener("click", send);
   modal.addEventListener("click", (e) => { if (e.target === modal) close(); });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !modal.classList.contains("hidden")) close();
-  });
+  modal.addEventListener("close", () => opener?.focus());
 }
 
-// The COMPLETE feedback report. Every field the app ever sends is assembled here and only
-// here, from the inputs passed in — never from parsed events — so the privacy hard rule
-// ("CSV contents never leave the browser") is a tested invariant, not a convention:
-// tests/feedback.test.js loads real parsed rows and asserts none of their content (raw
-// lines, key=value pairs) appears anywhere in the serialized report, and that the report
-// carries exactly these whitelisted keys. If you add a field, extend that test.
+// All outgoing fields are assembled here. Diagnostics excludes event arrays;
+// selected filter values and captured errors are intentionally included for review.
 export function assembleReport({ message = "", email = "", diagnostics = {}, errors = [] }) {
   return {
     message,
@@ -104,7 +101,7 @@ export function assembleReport({ message = "", email = "", diagnostics = {}, err
     version: APP_VERSION,
     buildTime: BUILD_TIME,
     capturedAt: new Date().toISOString(),
-    url: location.href,
+    url: location.href.split(/[?#]/, 1)[0],
     userAgent: navigator.userAgent,
     viewport: `${window.innerWidth}x${window.innerHeight}`,
     diagnostics,
@@ -116,8 +113,8 @@ function buildPayload() {
   return assembleReport({
     message: modal.querySelector("#fbMessage").value.trim(),
     email: modal.querySelector("#fbEmail").value.trim(),
-    diagnostics: safe(getDiagnostics),
-    errors: getErrorLog(),
+    diagnostics: previewPayload?.diagnostics ?? safe(getDiagnostics),
+    errors: previewPayload?.errors ?? getErrorLog(),
   });
 }
 
@@ -126,7 +123,9 @@ function safe(fn) {
 }
 
 function refreshPreview() {
+  previewPayload = null;
   const { message, email, ...rest } = buildPayload();
+  previewPayload = rest;
   // preview shows everything except the free-text fields the user is editing
   modal.querySelector("#fbPayload").textContent = JSON.stringify(rest, null, 2);
 }
@@ -134,14 +133,17 @@ function refreshPreview() {
 function open() {
   refreshPreview();
   setStatus("");
-  modal.classList.remove("hidden");
+  if (!modal.open) {
+    opener = document.activeElement;
+    modal.showModal();
+  }
   modal.querySelector("#fbMessage").focus();
 }
-function close() { modal.classList.add("hidden"); }
+function close() { modal.close(); }
 
-function setStatus(html, color) {
+function setStatus(message, color) {
   const el = modal.querySelector("#fbStatus");
-  el.innerHTML = html;
+  el.textContent = message;
   el.style.color = color || "";
 }
 
@@ -154,11 +156,14 @@ async function send() {
   const sendBtn = modal.querySelector('[data-act="send"]');
   sendBtn.disabled = true;
   setStatus("Sending…", "#94a3b8");
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 15_000);
   try {
     let ok;
     if (WEB3FORMS_KEY) {
       // Web3Forms: POST the access key + fields; success is res.ok AND { success: true }.
       const res = await fetch(WEB3FORMS_URL, {
+        signal: controller.signal,
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
@@ -176,6 +181,7 @@ async function send() {
     } else {
       // Generic endpoint (e.g. Formspree): success is just res.ok.
       const res = await fetch(ENDPOINT, {
+        signal: controller.signal,
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
@@ -194,6 +200,7 @@ async function send() {
       "#fca5a5"
     );
   } finally {
+    clearTimeout(deadline);
     sendBtn.disabled = false;
   }
 }

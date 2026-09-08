@@ -11,8 +11,9 @@
    state they key on is how that drifts. This module is math; app.js decides when
    to call it and what to remember.
    ========================================================================== */
-import { HUMAN_TRIGGERS } from "./constants.js";
+import { HUMAN_TRIGGERS, MANUAL_PROG_TAG } from "./constants.js";
 import { eventVariancePct, fmtTimeDate } from "./format.js";
+import { zoneRunInProgram } from "./runs.js";
 
 /* ============================ Filtering ============================ */
 // The audit-feed / timeline filter predicate. `opts` is the sidebar state, read from the DOM by
@@ -37,8 +38,8 @@ export function matchesFilters(e, {
   }
   if (humanAudit && !HUMAN_TRIGGERS.has(e.trgCode)) return false;
   if (alertsOnly && !e.isAlert) return false;
-  if (minFlow > 0) { if (e.flow == null || e.flow < minFlow) return false; }
-  if (varActive) { const v = eventVariancePct(e); if (v == null || v < varMin || v > varMax) return false; }
+  if (minFlow > 0) { if (!Number.isFinite(e.flow) || e.flow < minFlow) return false; }
+  if (varActive) { const v = eventVariancePct(e); if (v == null || v < varMin || (varMax < 100 && v > varMax)) return false; }
   return true;
 }
 
@@ -79,22 +80,33 @@ export function centeredRange(t, width) {
 // `runsByMode` is { program, zone, mainline } → interval arrays; `laneSel` is the same shape but of
 // Sets of selected keys; `colorFor(group, key)` supplies the lane color (app.js owns categoryColor /
 // zoneColor). app.js memoizes the result — this build is spread-heavy and runs per pointermove.
-export function selectVisibleRuns(runsByMode, laneSel, { showScheduled = true, showManual = true } = {}, colorFor) {
+// `range` optionally limits selection to the drawn window. expandedManual only changes child row
+// layout: the collapsed manual envelope still represents those same logical runs.
+export function selectVisibleRuns(runsByMode, laneSel, { showScheduled = true, showManual = true } = {}, colorFor,
+  { expandedPrograms = new Set(), range = null } = {}) {
   const okType = iv => (iv.manual ? showManual : showScheduled);
-  const out = [];
-  if (laneSel.mainline.size) for (const iv of runsByMode.mainline) if (laneSel.mainline.has(iv.key)) out.push({ ...iv, group: "Mainline", color: colorFor("Mainline", iv.key) });
-  if (laneSel.program.size) for (const iv of runsByMode.program) if (laneSel.program.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Program", color: colorFor("Program", iv.key) });
-  if (laneSel.zone.size) for (const iv of runsByMode.zone) if (laneSel.zone.has(iv.key) && okType(iv)) out.push({ ...iv, group: "Zone", color: colorFor("Zone", iv.key) });
-  // Mirror the swimlane's Manual Runs section: manual zone runs are listed whatever the Zones
-  // dropdown says (it starts empty), so the panel can answer "what was running by hand here?" on a
-  // fresh load. Dedupe against the pass above — a zone can be selected AND manual, and the panel
-  // must list that run once.
-  if (showManual) {
-    const seen = new Set(out.map(iv => iv.group + "|" + iv.key + "|" + iv.start));
-    for (const iv of runsByMode.zone) {
-      if (!iv.manual || seen.has("Zone|" + iv.key + "|" + iv.start)) continue;
-      out.push({ ...iv, group: "Zone", color: colorFor("Zone", iv.key) });
+  const inRange = iv => !range || (iv.start < range.end && iv.end > range.start);
+  const out = [], seen = new Set(), expanded = new Map();
+  const add = (iv, group) => {
+    const id = JSON.stringify([group, iv.key, iv.start, iv.end]);
+    if (!inRange(iv) || seen.has(id)) return;
+    seen.add(id);
+    out.push({ ...iv, group, color: colorFor(group, iv.key) });
+  };
+  for (const iv of runsByMode.mainline) if (laneSel.mainline.has(iv.key)) add(iv, "Mainline");
+  for (const iv of runsByMode.program) if (laneSel.program.has(iv.key) && okType(iv) && inRange(iv)) {
+    add(iv, "Program");
+    if (expandedPrograms.has(iv.key)) {
+      if (!expanded.has(iv.key)) expanded.set(iv.key, []);
+      expanded.get(iv.key).push(iv);
     }
+  }
+  const realProgTags = new Set([...runsByMode.program.map(iv => String(iv.key)), MANUAL_PROG_TAG]);
+  const expandedRuns = [...expanded];
+  for (const iv of runsByMode.zone) {
+    if (!okType(iv) || !inRange(iv)) continue;
+    if (laneSel.zone.has(iv.key) || iv.manual ||
+      expandedRuns.some(([key, runs]) => zoneRunInProgram(iv, key, realProgTags, runs))) add(iv, "Zone");
   }
   return out;
 }

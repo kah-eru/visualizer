@@ -76,7 +76,7 @@ export function feedSearchText(e) {
 // True when every whitespace-separated token of `query` appears somewhere in the event's search text
 // (token AND). An empty/blank query matches everything.
 export function feedMatches(e, query) {
-  const toks = (query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const toks = Array.isArray(query) ? query : (query || "").toLowerCase().split(/\s+/).filter(Boolean);
   if (!toks.length) return true;
   const hay = feedSearchText(e);
   return toks.every(t => hay.includes(t));
@@ -131,9 +131,10 @@ export function feedSortValue(e, col) {
 //   - order by the active column (numeric for date, natural string else, event-time tiebreak) when
 //     `sortCol` is set, otherwise pin alarms/errors on top then chronological.
 // Returns the full ordered list; the caller applies FEED_CAP. Pure → unit-tested.
+const feedCollator = new Intl.Collator(undefined, { numeric: true });
 export function selectFeedRows(events, { query = "", sortCol = null, sortDir = "asc", revealedIds = new Set() } = {}) {
-  const base = events.filter(e => !isDurationMarker(e) || revealedIds.has(e._id));
-  const matched = query ? base.filter(e => feedMatches(e, query)) : base;
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const matched = events.filter(e => tokens.length ? feedMatches(e, tokens) : !isDurationMarker(e) || revealedIds.has(e._id));
   if (sortCol) {
     const dir = sortDir === "desc" ? -1 : 1;
     // Precompute each row's sort key once (the subject key calls subjectSummary) instead of recomputing
@@ -141,7 +142,7 @@ export function selectFeedRows(events, { query = "", sortCol = null, sortDir = "
     return matched
       .map(e => ({ e, v: feedSortValue(e, sortCol) }))
       .sort((a, b) => {
-        let c = sortCol === "date" ? a.v - b.v : String(a.v).localeCompare(String(b.v), undefined, { numeric: true });
+        let c = sortCol === "date" ? a.v - b.v : feedCollator.compare(String(a.v), String(b.v));
         if (!c) c = a.e.ts.getTime() - b.e.ts.getTime();
         return c * dir;
       })

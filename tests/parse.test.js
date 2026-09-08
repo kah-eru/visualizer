@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseTimestamp, parseRow, inferEffectivePrograms } from "../src/parse.js";
+import { parseTimestamp, parseRow, inferEffectivePrograms, telemetryValue } from "../src/parse.js";
 
 // helper: build a CSV row (array of columns) with a given time + trailing key=value/positional tokens
 const row = (time, cat, act, trg, ...rest) => [`06/17/26 ${time} -0600`, cat, act, trg, ...rest];
@@ -39,10 +39,56 @@ describe("parseTimestamp", () => {
     expect(parseTimestamp("not a date at all")).toBeNull();
   });
 
-  it("falls back to Date() for a non-matching but parseable string", () => {
+  it("accepts a strictly parsed ISO timestamp", () => {
     const d = parseTimestamp("2026-06-17T06:00:00Z");
     expect(d).toBeInstanceOf(Date);
     expect(isNaN(d)).toBe(false);
+  });
+
+  it("rejects suffix injection, invalid offsets, and normalized calendar/time fields", () => {
+    for (const value of ["06/17/26 08:00:00<img src=x>", "06/17/26 08:00:00 -0600 junk",
+      "02/31/26 08:00:00", "02/29/26 08:00:00", "13/01/26 08:00:00", "06/00/26 08:00:00",
+      "06/17/26 25:99:99", "06/17/26 08:00:00 -2460", "2026-02-31T08:00:00Z"]) {
+      expect(parseTimestamp(value), value).toBeNull();
+    }
+    expect(parseTimestamp("02/29/2024 08:00:00").toISOString()).toBe("2024-02-29T08:00:00.000Z");
+  });
+});
+
+describe("import hardening and telemetry", () => {
+  it("treats inherited names as ordinary imported keys and undecoded values", () => {
+    const e = parseRow(row("06:00:00", "constructor", "__proto__", "toString", "__proto__=safe", "ST=constructor"));
+    expect(Object.getPrototypeOf(e.pairs)).toBeNull();
+    expect(e.pairs.__proto__.raw).toBe("safe");
+    expect([e.category, e.action, e.trigger]).toEqual(["constructor", "__proto__", "toString"]);
+    expect(e.pairs.ST.decoded).toBe("");
+    const unknown = parseRow(row("06:01:00", "ZN", "DN", "SY", "ZN=constructor"));
+    inferEffectivePrograms([unknown]);
+    expect(unknown.progEff).toBeNull();
+    const start = parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=constructor", "PG=__proto__"));
+    inferEffectivePrograms([unknown, start]);
+    expect(unknown.progEff).toBe("__proto__");
+  });
+
+  it("graphs only finite converted telemetry, retaining invalid values for display", () => {
+    const e = parseRow(row("06:00:00", "FS", "RD", "SY", "AC=unavailable", "EX=10", "PR=20"));
+    expect(telemetryValue(e, "AC")).toBeNull();
+    expect(telemetryValue(e, "EX")).toBeCloseTo(37.85);
+    expect(telemetryValue(e, "PR")).toBeCloseTo(137.88);
+    expect(telemetryValue(e, "constructor")).toBeNull();
+    expect(e.flow).toBeCloseTo(37.85);
+    expect(e.pairs.AC.display).toBe("unavailable");
+    for (const raw of ["HI", "12"]) {
+      const mg = parseRow(row("06:00:00", "MG", "ST", "SY", `PR=${raw}`));
+      expect(telemetryValue(mg, "PR")).toBeNull();
+      expect(mg.pairs.PR.unit).toBe("");
+    }
+    for (const raw of ["unavailable", "Infinity", "9".repeat(310)]) {
+      const invalid = parseRow(row("06:00:00", "FS", "RD", "SY", `AC=${raw}`));
+      expect(telemetryValue(invalid, "AC")).toBeNull();
+      expect(invalid.flow).toBeNull();
+    }
+    expect(telemetryValue({ pairs: { AC: { value: 3, unit: "GPM" } } }, "AC")).toBeNull();
   });
 });
 

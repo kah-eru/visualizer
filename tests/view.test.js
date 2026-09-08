@@ -87,6 +87,9 @@ describe("matchesFilters", () => {
     it("keeps flowless rows when the minimum is 0 (the default)", () => {
       expect(matchesFilters(ev(T, "ZN", "DN", "DT", "ZN=12"), { minFlow: 0 })).toBe(true);
     });
+    it("rejects a nonnumeric reading when a minimum is set", () => {
+      expect(matchesFilters(ev(T, "FS", "RD", "SY", "AC=unavailable"), { minFlow: 1 })).toBe(false);
+    });
   });
 
   describe("variance", () => {
@@ -107,6 +110,12 @@ describe("matchesFilters", () => {
     });
     it("drops rows with no computable variance when the band is active", () => {
       expect(matchesFilters(zoneRow, { varMin: 1, varMax: 100, hasHydro: true })).toBe(false);
+    });
+    it("treats the maximum slider endpoint as unbounded with a positive minimum", () => {
+      const large = ev(T, "FS", "RD", "SY", "AC=30", "EX=10");
+      expect(matchesFilters(large, { varMin: 1, varMax: 100, hasHydro: true })).toBe(true);
+      expect(matchesFilters(large, { varMin: 1, varMax: 99, hasHydro: true })).toBe(false);
+      expect(matchesFilters(ev(T, "FS", "RD", "SY", "AC=unavailable", "EX=10"), { varMin: 1, hasHydro: true })).toBe(false);
     });
   });
 
@@ -237,6 +246,28 @@ describe("selectVisibleRuns", () => {
     const out = selectVisibleRuns(runsByMode, sel(["1"], [], []), {}, colorFor);
     expect(out[0]).not.toBe(runsByMode.program[0]);
     expect(runsByMode.program[0].group).toBeUndefined(); // the source run stays untagged
+  });
+
+  it("includes expanded selected program children once, honoring real tags, manual tags and range", () => {
+    const data = { program: [run("1", 0, 100), run("1", 0, 100), run("2", 0, 100), run("3", 200, 300)], mainline: [run("outside", 200, 300)], zone: [
+      run("matched", 10, 50, { program: "1" }), run("orphan", 10, 50, { program: "unknown" }),
+      run("other-program", 10, 50, { program: "2" }), run("reserved", 10, 50, { program: "MR" }),
+      run("outside", 210, 250, { program: "1" }), run("manual", 10, 50, { manual: true, program: "MR" }),
+    ] };
+    const options = { expandedPrograms: new Set(["1", "2", "3"]), expandedManual: false, range: { start: 0, end: 100 } };
+    const out = selectVisibleRuns(data, sel(["1", "3"], ["matched"], ["outside"]), {}, colorFor, options);
+    expect(out.map(r => r.key)).toEqual(["1", "matched", "orphan", "manual"]);
+    expect(selectVisibleRuns(data, sel(["1"]), { showManual: false }, colorFor, options).map(r => r.key)).toEqual(["1", "matched", "orphan"]);
+    expect(selectVisibleRuns(data, sel(["1"]), { showScheduled: false, showManual: false }, colorFor, options)).toEqual([]);
+  });
+
+  it("excludes boundary-only parent lanes and their unselected children, matching drawn bars", () => {
+    const data = { program: [run("before", 0, 100), run("after", 200, 300)], mainline: [], zone: [
+      run("2", 50, 150, { program: "before" }), run("3", 150, 250, { program: "after" }),
+    ] };
+    const options = { expandedPrograms: new Set(["before", "after"]), range: { start: 100, end: 200 } };
+    expect(selectVisibleRuns(data, sel(["before", "after"]), {}, colorFor, options)).toEqual([]);
+    expect(selectVisibleRuns(data, sel(["before", "after"], ["2"]), {}, colorFor, options).map(r => r.key)).toEqual(["2"]);
   });
 });
 

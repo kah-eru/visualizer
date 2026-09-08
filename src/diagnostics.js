@@ -1,14 +1,13 @@
 /* ============================================================================
    Diagnostics shaping for the feedback/crash report.
 
-   This module exists to make the project's #1 hard rule — CSV/event-log contents
-   must never leave the browser — a TESTED invariant rather than a convention.
+   This module keeps event arrays out of the report. Selected filter values and
+   filenames are deliberately included; captured errors may contain log values.
 
    The rule has two halves. `assembleReport` (feedback.js) is the single place the
    outgoing report is built, and it is already pinned by tests/feedback.test.js.
    This is the other half: the diagnostics object is the only part of that report
-   derived from the loaded log, so it is the one place a leak would realistically
-   be introduced (a "recent events" sample, a raw line attached to an error).
+   derived from loaded event arrays. Tests prevent adding raw event samples here.
 
    Splitting the SHAPING (here, pure) from the DOM READS (getDiagnostics in app.js)
    is what lets a Node test import the real function. app.js touches the DOM at
@@ -24,8 +23,7 @@
         therefore the test — ever seeing it.
    ========================================================================== */
 
-// Snapshot of app state for the crash/feedback payload. Deliberately excludes ALL CSV row
-// content — only the filename, counts, and current filter/view selections.
+// Snapshot excludes event arrays; filename and selected filter values are previewed.
 export function buildDiagnostics({
   fileName = null, allEvents = [], filtered = [], hasHydro = false, windowUnit = null,
   range = null, lanes = {}, flowOn = false, eventTlOn = false, filters = {},

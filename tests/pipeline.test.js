@@ -137,7 +137,8 @@ describe.skipIf(!has("Evnt_202606.csv"))("pipeline · Evnt_202606.csv (local onl
   it("builds runs in every mode", () => {
     const { runs } = data();
     expect(runs("program").length).toBe(148);
-    expect(runs("zone").length).toBe(383);
+    // Five heartbeat discontinuities split two formerly merged missing-DONE spans into 4 + 3 sessions.
+    expect(runs("zone").length).toBe(388);
   });
 });
 

@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 // controller logs are gitignored for privacy, so CI has no others to reach for.
 const FIXTURE = fileURLToPath(new URL("../Evnt_flow_test.csv", import.meta.url));
 
+test.afterEach(async ({ page }) => {
+  await expect(page.locator('[role="alert"]')).toHaveCount(0);
+});
+
 test("loads a CSV and renders the timeline, feed, and stats", async ({ page }) => {
   // Any console error at all is a failure — a thrown render is exactly the class of bug this catches,
   // and app.js routes its own failures through pushError/showErrorBanner rather than crashing loudly.
@@ -17,8 +21,7 @@ test("loads a CSV and renders the timeline, feed, and stats", async ({ page }) =
   await page.goto("/");
   await expect(page.locator("#subtitle")).toContainText("Upload a controller event log");
 
-  // #fileInput is class="hidden" (the visible control is the styled #dropZone); setInputFiles drives
-  // the input directly, which is what the drop zone's click handler ends up doing anyway.
+  // The native input is visually hidden inside its upload label; drive it directly.
   await page.setInputFiles("#fileInput", FIXTURE);
 
   // The fixture is 44 rows, all of which parse — pinned exactly in tests/pipeline.test.js.
@@ -93,6 +96,7 @@ test("loads every feed event in progressive batches", async ({ page }) => {
   await expect(page.getByText("Feed event 1500", { exact: true })).toHaveCount(0);
   await page.locator(".feed-load-more").click();
   await expect(page.locator(".feed-row")).toHaveCount(1501);
+  await page.locator(".feed-expand").last().click();
   await expect(page.getByText("Feed event 1500", { exact: true })).toHaveCount(1);
   await expect(page.locator(".feed-load-more")).toHaveCount(0);
 

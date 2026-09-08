@@ -14,7 +14,7 @@
   <!-- ================= SIDEBAR / FILTERS ================= -->
   <aside class="w-full lg:w-64 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0 lg:h-screen lg:sticky lg:top-0 lg:overflow-y-auto">
     <div class="flex items-center gap-2 mb-6">
-      <div class="w-9 h-9 rounded-lg bg-sky-500 flex items-center justify-center text-slate-900 font-black text-lg">B</div>
+      <div class="w-9 h-9 bg-sky-500 flex items-center justify-center text-slate-900 font-black text-lg">B</div>
       <div>
         <h1 class="text-lg font-bold text-white leading-tight">Baseline</h1>
         <p class="text-xs text-slate-400">Irrigation Event Logs</p>
@@ -24,12 +24,13 @@
     <!-- File upload (excluded from PDF via data attribute) -->
     <section id="uploadSection" class="mb-6" data-html2canvas-ignore="true">
       <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Data Source</label>
-      <div id="dropZone" class="border-2 border-dashed border-slate-700 rounded-lg p-4 text-center transition-colors cursor-pointer">
-        <input type="file" id="fileInput" accept=".csv" class="hidden">
+      <label for="fileInput" id="dropZone" class="border-2 border-dashed border-slate-700 p-4 text-center transition-colors cursor-pointer">
+        <input type="file" id="fileInput" accept=".csv" class="sr-only" aria-label="Upload controller CSV">
         <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
         <p class="text-sm text-slate-300 font-medium">Drop CSV or click to upload</p>
         <p id="fileName" class="text-xs text-sky-400 mt-1 truncate"></p>
-      </div>
+      </label>
+      <p id="importStatus" role="status" aria-live="polite" class="text-xs text-amber-300 mt-2"></p>
     </section>
 
     <div class="space-y-5">
@@ -38,62 +39,62 @@
         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Limit the timeline, chart, and stat strip to a From–To window. Leave blank to use the Window presets / minimap instead. The Activity Audit Feed still lists the whole log.">Date / Time Range</label>
         <div class="space-y-2">
           <div>
-            <span class="text-xs text-slate-500">From</span>
-            <input type="datetime-local" id="dateFrom" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+            <label for="dateFrom" class="text-xs text-slate-500">From</label>
+            <input type="datetime-local" id="dateFrom" class="w-full bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
           </div>
           <div>
-            <span class="text-xs text-slate-500">To</span>
-            <input type="datetime-local" id="dateTo" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+            <label for="dateTo" class="text-xs text-slate-500">To</label>
+            <input type="datetime-local" id="dateTo" class="w-full bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
           </div>
         </div>
       </div>
 
       <!-- Timeline display toggles -->
-      <div class="border border-slate-800 rounded-md p-3 space-y-2 bg-slate-800/30">
+      <div class="border border-slate-800 p-3 space-y-2 bg-slate-800/30">
         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 cursor-help" title="Choose which programs, zones, and mainlines get their own lane on the timeline. Programs and mainlines start on 'All'; zones start empty — pick the ones you care about. This shapes the timeline (unlike 'More filters', which slice the feed).">Show on timeline</label>
         <div class="space-y-1.5 text-sm text-slate-300">
           <div class="ml-dd" data-group="program">
-            <button id="ddProgramBtn" title="Pick which programs get a timeline lane. Click a program's label in the lane to expand it into its zones." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Programs: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddProgramBtn" title="Pick which programs get a timeline lane. Click a program's label in the lane to expand it into its zones." class="ml-dd-btn bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Programs: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddProgramPanel" class="ml-dd-panel hidden">
-              <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
+              <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddProgramList" class="ml-dd-list"></div>
             </div>
           </div>
           <div class="ml-dd" data-group="zone">
-            <button id="ddZoneBtn" title="Pick which zones get their own timeline lane. Selected zones remain visible even without runtime; blocker diamonds open the event that stopped them. Zones start empty. Manual runs also have their own lane." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Zones: <span class="ddSummary text-sky-400">None</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddZoneBtn" title="Pick which zones get their own timeline lane. Selected zones remain visible even without runtime; blocker diamonds open the event that stopped them. Zones start empty. Manual runs also have their own lane." class="ml-dd-btn bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Zones: <span class="ddSummary text-sky-400">None</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddZonePanel" class="ml-dd-panel hidden">
-              <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
+              <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddZoneList" class="ml-dd-list"></div>
             </div>
           </div>
           <div class="ml-dd" data-group="mainline">
-            <button id="ddMainlineBtn" title="Pick which mainlines get their own timeline lane." class="ml-dd-btn bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Mainlines: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
+            <button id="ddMainlineBtn" title="Pick which mainlines get their own timeline lane." class="ml-dd-btn bg-slate-800 border border-slate-700 px-2 py-1.5 text-slate-200 hover:border-sky-500"><span>Mainlines: <span class="ddSummary text-sky-400">All</span></span><span class="text-slate-500">▾</span></button>
             <div id="ddMainlinePanel" class="ml-dd-panel hidden">
-              <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 rounded bg-slate-900 border-slate-600 accent-sky-500">All</label>
+              <label class="ml-dd-all text-slate-200 font-medium border-b border-slate-700 pb-1 mb-1"><input type="checkbox" class="ddAll w-3.5 h-3.5 bg-slate-900 border-slate-600 accent-sky-500">All</label>
               <div id="ddMainlineList" class="ml-dd-list"></div>
             </div>
           </div>
         </div>
         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 pt-1 cursor-help" title="Show or hide run bars on the timeline by how they started. This is the control that isolates manual runs on the timeline (unlike 'Human audit only', which only filters the feed). Manual also shows/hides the timeline's Manual Runs lane.">Run type (zones &amp; programs)</label>
         <div class="grid grid-cols-2 gap-1 text-sm text-slate-300">
-          <label class="flex items-center gap-2 cursor-pointer" title="Show green run bars the program schedule started on its own."><input type="checkbox" id="showScheduled" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-emerald-500"> <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#22c55e"></span>Scheduled</label>
-          <label class="flex items-center gap-2 cursor-pointer" title="Show amber run bars a person started (User / Operator / Programmer / Administrator, or a manual-run action) — each carries an 'M' badge. Also shows the timeline's Manual Runs lane, which collects every hand-started run even when its zone isn't picked in the Zones dropdown."><input type="checkbox" id="showManual" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-amber-500"> <span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#f59e0b"></span>Manual</label>
+          <label class="flex items-center gap-2 cursor-pointer" title="Show green run bars the program schedule started on its own."><input type="checkbox" id="showScheduled" checked class="w-4 h-4 bg-slate-800 border-slate-600 accent-emerald-500"> <span class="inline-block w-2.5 h-2.5 " style="background:#22c55e"></span>Scheduled</label>
+          <label class="flex items-center gap-2 cursor-pointer" title="Show amber run bars a person started (User / Operator / Programmer / Administrator, or a manual-run action) — each carries an 'M' badge. Also shows the timeline's Manual Runs lane, which collects every hand-started run even when its zone isn't picked in the Zones dropdown."><input type="checkbox" id="showManual" checked class="w-4 h-4 bg-slate-800 border-slate-600 accent-amber-500"> <span class="inline-block w-2.5 h-2.5 " style="background:#f59e0b"></span>Manual</label>
         </div>
-        <label class="flex items-center gap-2 cursor-pointer pt-1 text-sm text-slate-300" title="Show or hide the red alarm/error ticks above the lanes. Click a tick to jump to that event in the Activity Audit Feed."><input type="checkbox" id="showAlertMarks" checked class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-rose-500"> <span class="inline-block w-2 h-2.5 rounded-sm" style="background:#ef4444"></span>Alert markers</label>
+        <label class="flex items-center gap-2 cursor-pointer pt-1 text-sm text-slate-300" title="Show or hide the red alarm/error ticks above the lanes. Click a tick to jump to that event in the Activity Audit Feed."><input type="checkbox" id="showAlertMarks" checked class="w-4 h-4 bg-slate-800 border-slate-600 accent-rose-500"> <span class="inline-block w-2 h-2.5 " style="background:#ef4444"></span>Alert markers</label>
       </div>
 
       <!-- Human Audit toggle -->
-      <label class="flex items-start gap-2 cursor-pointer select-none" title="Keeps only events a PERSON triggered (User / Operator / Programmer / Administrator) and hides everything the controller did on its own — answers 'who touched this system?' This filters the event list and Audit Feed, not the run bars. It will NOT isolate manual run bars: a run's stop event (DN/SP/OF) is generated by the controller, so it gets hidden here and the bar can't be drawn cleanly. To see manual runs on the timeline, use the Manual Runs lane (shown by default, toggled by Run type → 🟧 Manual) instead.">
-        <input type="checkbox" id="humanAudit" class="mt-0.5 w-4 h-4 rounded bg-slate-800 border-slate-600 accent-sky-500">
+      <label class="flex items-start gap-2 cursor-pointer select-none" title="Filter the feed and event markers to actions by a person. Historical run durations and hydraulic readings stay complete.">
+        <input type="checkbox" id="humanAudit" class="mt-0.5 w-4 h-4 bg-slate-800 border-slate-600 accent-sky-500">
         <span class="text-sm text-slate-300">Human audit only
-          <span class="block text-xs text-slate-500">Keep only what a person did (User / Operator / Programmer / Administrator) and hide the controller's own actions — a “who touched this?” view of the events. This filters the Audit Feed, not the run bars; manual runs have their own <b>Manual Runs</b> lane on the timeline.</span>
+          <span class="block text-xs text-slate-500">Keep events triggered by a person. Use Run type to select manual runs; feed filters do not change historical runs.</span>
         </span>
       </label>
 
       <!-- SubStation isolation -->
       <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Isolate a single substation (by serial SN or number SB) so the timeline and feed show only its events. Leave on “All SubStations” to see everything.">SubStation</label>
-        <select id="substationFilter" title="Isolate a single substation; “All SubStations” shows everything." class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Filter events with the selected SN/SB identity. Run history and hydraulic readings remain complete.">SubStation</label>
+        <select id="substationFilter" aria-label="SubStation" title="Filter events with the selected SN/SB identity. Run history and hydraulic readings remain complete." class="w-full bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500">
           <option value="">All SubStations</option>
         </select>
       </div>
@@ -102,16 +103,16 @@
       <div id="varSection" class="hidden">
         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 cursor-help" title="Variance = |Actual − Expected| ÷ Expected, as a percent. Filters the feed to events whose commanded (EX) and measured (AC) flow differ by this much — high variance flags over/under-flow. Only shown when the log has AC/EX flow.">Flow Variance |AC−EX| %</label>
         <div class="space-y-1">
-          <div class="flex items-center gap-2"><span class="text-xs text-slate-500 w-8">min</span>
-            <input type="range" id="varMin" min="0" max="100" value="0" step="1" class="flex-1" title="Lowest flow-variance % to show (0 = include perfectly-matched flow)."><span id="varMinVal" class="text-xs text-sky-400 w-8 text-right">0%</span></div>
-          <div class="flex items-center gap-2"><span class="text-xs text-slate-500 w-8">max</span>
-            <input type="range" id="varMax" min="0" max="100" value="100" step="1" class="flex-1" title="Highest flow-variance % to show (100 = include the largest deviations)."><span id="varMaxVal" class="text-xs text-sky-400 w-8 text-right">100%</span></div>
+          <div class="flex flex-wrap items-center gap-2"><span class="text-xs text-slate-500 w-8">min</span>
+            <input type="range" id="varMin" aria-label="Minimum flow variance percent" min="0" max="100" value="0" step="1" class="flex-1" title="Lowest flow-variance % to show (0 = include perfectly-matched flow)."><span id="varMinVal" class="text-xs text-sky-400 w-8 text-right">0%</span></div>
+          <div class="flex flex-wrap items-center gap-2"><span class="text-xs text-slate-500 w-8">max</span>
+            <input type="range" id="varMax" aria-label="Maximum flow variance percent (100 means no upper limit)" min="0" max="100" value="100" step="1" class="flex-1" title="Highest variance to show; Any includes deviations above 100%."><span id="varMaxVal" class="text-xs text-sky-400 w-8 text-right">Any</span></div>
         </div>
       </div>
 
       <!-- Alerts only -->
       <label class="flex items-center gap-2 cursor-pointer select-none" title="Show only alarms and errors (category AL or action ER) in the Activity Audit Feed — hides normal runs and status events.">
-        <input type="checkbox" id="alertsOnly" class="w-4 h-4 rounded bg-slate-800 border-slate-600 accent-sky-500">
+        <input type="checkbox" id="alertsOnly" class="w-4 h-4 bg-slate-800 border-slate-600 accent-sky-500">
         <span class="text-sm text-slate-300">Show Alerts Only</span>
       </label>
 
@@ -119,21 +120,21 @@
       <details class="border-t border-slate-800 pt-3">
         <summary class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1">▸ More filters</summary>
         <div class="space-y-4 mt-2">
-          <div title="Narrows the events shown in the Audit Feed by category. Only Zone, Program, and Mainline have timeline lanes — pick one of those and its lane stays (the others empty). Any other category (Manual Run, Alarm, Message, System…) has no lane, so it shows in the feed only and the timeline goes blank.">
+          <div title="Filter the feed and event markers by category; historical runs remain complete.">
             <label class="block text-xs text-slate-400 mb-1 cursor-help">Category</label>
-            <select id="categoryFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Categories</option></select>
+            <select id="categoryFilter" aria-label="Category" class="w-full bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Categories</option></select>
           </div>
-          <div title="Filters events by action for the Audit Feed. Selecting a single action can empty the timeline: a run bar needs BOTH its start (Water / Run / Start) and its stop (Done / Off / Stop), and picking just one drops the other end so bars can't be drawn. Best used to slice the feed, not the timeline.">
+          <div title="Filter event rows; use lane and run-type controls to select runs.">
             <label class="block text-xs text-slate-400 mb-1 cursor-help">Action</label>
-            <select id="actionFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Actions</option></select>
+            <select id="actionFilter" aria-label="Action" class="w-full bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Actions</option></select>
           </div>
-          <div title="Filters events by who/what triggered them, for the Audit Feed. Selecting one trigger can empty the timeline: a run's start is usually 'by BaseManager' or a person while its stop is 'by System', so filtering to one drops the other end of the pair and the bar can't be drawn.">
+          <div title="Filter events by actor; run history and hydraulic readings remain complete.">
             <label class="block text-xs text-slate-400 mb-1 cursor-help">Trigger / Actor</label>
-            <select id="triggerFilter" class="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Triggers</option></select>
+            <select id="triggerFilter" aria-label="Trigger / Actor" class="w-full bg-slate-800 border border-slate-700 px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-sky-500"><option value="">All Triggers</option></select>
           </div>
-          <div title="Keeps only events that carry a flow reading (the telemetry rows) at or above this rate — a feed tool for finding high-flow moments. It removes the start/stop markers the timeline bars are built from, so raising it above 0 will thin out or empty the timeline.">
+          <div title="Find event rows with flow at or above this rate. Run history and hydraulic readings remain complete.">
             <label class="block text-xs text-slate-400 mb-1 cursor-help">Min Flow Rate (L/min)</label>
-            <input type="range" id="flowSlider" min="0" max="100" value="0" step="0.1" class="w-full">
+            <input type="range" id="flowSlider" aria-label="Minimum flow" min="0" max="100" value="0" step="0.1" class="w-full">
             <div class="flex justify-between text-xs text-slate-400 mt-1"><span>0</span><span id="flowValue" class="text-sky-400 font-medium">0</span><span id="flowMax">100</span></div>
           </div>
         </div>
@@ -143,14 +144,14 @@
       <div class="pt-3 border-t border-slate-800">
         <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Advanced</label>
         <label class="flex items-start gap-2 cursor-pointer select-none" title="Include low-level chatter — substation, network, two-wire, and message-code events. Off keeps the view focused on programs, zones, run times, and flow.">
-          <input type="checkbox" id="showAdvanced" class="mt-0.5 w-4 h-4 rounded bg-slate-800 border-slate-600 accent-sky-500">
+          <input type="checkbox" id="showAdvanced" class="mt-0.5 w-4 h-4 bg-slate-800 border-slate-600 accent-sky-500">
           <span class="text-sm text-slate-300">Show low-level system events
             <span class="block text-xs text-slate-500">Substation, network, two-wire &amp; message chatter. Off by default — focuses on programs, zones, run times &amp; flow.</span>
           </span>
         </label>
       </div>
 
-      <button id="resetBtn" class="w-full mt-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium py-2 rounded-md transition-colors" data-html2canvas-ignore="true">Reset Filters</button>
+      <button id="resetBtn" class="w-full mt-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium py-2 transition-colors" data-html2canvas-ignore="true">Reset Filters</button>
     </div>
   </aside>
 
@@ -161,17 +162,17 @@
         <h2 class="text-2xl font-bold text-white">Event Dashboard</h2>
         <p id="subtitle" class="text-sm text-slate-400">Upload a controller event log (.csv) to begin.</p>
       </div>
-      <div class="flex items-center gap-2">
-        <input id="controllerId" type="text" placeholder="Controller ID" title="Stamped on the printed report" class="bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 w-40" data-html2canvas-ignore="true">
-        <button id="guideBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 rounded-md transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="controllerId" aria-label="Controller ID" type="text" placeholder="Controller ID" title="Stamped on the printed report" class="bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 w-40" data-html2canvas-ignore="true">
+        <button id="guideBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
           How to use
         </button>
-        <button id="refBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 rounded-md transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
+        <button id="refBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9h.01M11 12h1v4h1m-1-9a9 9 0 110 18 9 9 0 010-18z"/></svg>
           Reference
         </button>
-        <button id="pdfBtn" title="Open your browser's print dialog for this dashboard — choose “Save as PDF” to export a file, or send it to a printer." class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-semibold text-sm px-4 py-2 rounded-md transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
+        <button id="pdfBtn" title="Open your browser's print dialog for this dashboard — choose “Save as PDF” to export a file, or send it to a printer." class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           Print / Save as PDF
         </button>
@@ -181,7 +182,7 @@
     <!-- This wrapper is what gets exported to PDF -->
     <div id="dashboard">
       <!-- Slim stat strip -->
-      <div class="flex flex-wrap items-center gap-x-8 gap-y-1 mb-4 bg-slate-900 border border-slate-800 rounded-xl px-5 py-3">
+      <div class="flex flex-wrap items-center gap-x-8 gap-y-1 mb-4 bg-slate-900 border border-slate-800 px-5 py-3">
         <div class="cursor-help" title="Number of event rows in the current time window, after filters. Change the Window presets or drag the minimap to widen/narrow it."><span id="statTotal" class="text-2xl font-bold text-white">0</span> <span class="text-slate-400 text-xs">events in window</span></div>
         <div class="cursor-help" title="Alarms/errors (category AL or action ER) in the current window. These are pinned to the top of the Activity Audit Feed."><span id="statAlerts" class="text-2xl font-bold text-rose-400">0</span> <span class="text-slate-400 text-xs">active alerts</span></div>
         <div class="cursor-help" title="Program / zone / mainline runs (start→stop pairs) drawn as bars in the timeline for the current window."><span id="statRuns" class="text-2xl font-bold text-emerald-400">0</span> <span class="text-slate-400 text-xs">runs</span></div>
@@ -189,27 +190,26 @@
       </div>
 
       <!-- TOP PANE: Swimlane timeline + Hydraulic overlay -->
-      <div id="timelineCard" class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+      <div id="timelineCard" class="bg-slate-900 border border-slate-800 p-5 mb-6">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 class="text-sm font-semibold text-slate-200">Execution Timeline</h3>
-          <div class="flex items-center gap-2" data-html2canvas-ignore="true">
-            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Draggable playhead with a live info panel"><input type="checkbox" id="scrubberOn" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-amber-500">Scrubber</label>
-            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Snap the playhead to block start/end edges"><input type="checkbox" id="scrubberSnap" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-amber-500">Snap</label>
+          <div class="flex flex-wrap items-center gap-2" data-html2canvas-ignore="true">
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Draggable playhead with a live info panel"><input type="checkbox" id="scrubberOn" checked class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-amber-500">Scrubber</label>
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Snap the playhead to block start/end edges"><input type="checkbox" id="scrubberSnap" checked class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-amber-500">Snap</label>
             <span class="text-slate-700">|</span>
-            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Chart the hydraulic flow / pressure lines on this timeline. Flow is read from Actual (AC) / Expected (EX) values, which the controller logs during zone runs with flow monitoring."><input type="checkbox" id="flowOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Flow</label><span id="flowNote" class="hidden text-[11px] text-amber-400 cursor-help" title="This log has no Actual/Expected (AC/EX) flow readings — the controller only logs those during zone runs with flow monitoring. If you're chasing flow with no zones running, check the FlowStation / flow report instead of this event log.">· no flow data</span>
-            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Show a separate timeline of interventions &amp; alerts (pause, disable, status, set, alarms) and why they happened. These events have no bar on the main timeline, so a feed row's “↗ events” button lands here — and switches this on for you if it's off."><input type="checkbox" id="eventTlOn" class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-rose-500">Events</label>
-            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Split cycle-and-soak zone runs into watering (solid) vs soak (dimmed/striped) segments"><input type="checkbox" id="soakSplitOn" checked class="w-3.5 h-3.5 rounded bg-slate-800 border-slate-600 accent-sky-500">Soak</label>
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Chart the hydraulic flow / pressure lines on this timeline. Flow is read from Actual (AC) / Expected (EX) values, which the controller logs during zone runs with flow monitoring."><input type="checkbox" id="flowOn" class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-sky-500">Flow</label><span id="flowNote" class="hidden text-[11px] text-amber-400 cursor-help" title="This log has no Actual/Expected (AC/EX) flow readings — the controller only logs those during zone runs with flow monitoring. If you're chasing flow with no zones running, check the FlowStation / flow report instead of this event log.">· no flow data</span>
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Show a separate timeline of interventions &amp; alerts (pause, disable, status, set, alarms) and why they happened. These events have no bar on the main timeline, so a feed row's “↗ events” button lands here — and switches this on for you if it's off."><input type="checkbox" id="eventTlOn" class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-rose-500">Events</label>
+            <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Split cycle-and-soak zone runs into watering (solid) vs soak (dimmed/striped) segments"><input type="checkbox" id="soakSplitOn" checked class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-sky-500">Soak</label>
             <span class="text-slate-700">|</span>
-            <button id="navPrev" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 rounded-md transition-colors" title="Previous">◀</button>
+            <button id="navPrev" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 transition-colors" title="Previous">◀</button>
             <span id="navLabel" class="text-xs text-slate-400"></span>
-            <button id="navNext" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 rounded-md transition-colors" title="Next">▶</button>
-            <button id="zoomOutBtn" title="Undo the last zoom — return to the previous view window." class="hidden text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-md transition-colors">Back</button>
+            <button id="navNext" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium px-2.5 py-1.5 transition-colors" title="Next">▶</button>
           </div>
         </div>
         <!-- view-window presets -->
         <div class="flex flex-wrap items-center gap-2 mb-2 text-xs" data-html2canvas-ignore="true">
           <span class="text-slate-400 cursor-help" title="Set how much time the timeline shows at once. Presets centre on the scrubber playhead (or the view centre when the scrubber is off), so zooming keeps that moment in view; ◀ ▶ or the arrow keys step one window at a time.">Window:</span>
-          <div id="windowPresets" class="inline-flex rounded-md overflow-hidden border border-slate-700">
+          <div id="windowPresets" class="inline-flex flex-wrap overflow-hidden border border-slate-700">
             <button data-win="all" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Fit the entire log in one view.">All</button>
             <button data-win="month" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-month window.">Month</button>
             <button data-win="week" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-week window.">Week</button>
@@ -225,7 +225,7 @@
           <div class="flex justify-between text-[10px] text-slate-500 mb-0.5">
             <span id="miniStart"></span><span class="text-slate-400">Full timeline — drag the window to navigate</span><span id="miniEnd"></span>
           </div>
-          <div id="miniMap" class="relative select-none" title="Overview of the whole log. Drag the bright window to pan, drag its edges to resize, or click anywhere to jump the view there." style="height:44px; background:#0b1220; border:1px solid #1e293b; border-radius:6px; overflow:hidden; cursor:pointer;">
+          <div id="miniMap" tabindex="0" role="group" aria-label="Timeline overview. Arrow keys pan; plus and minus zoom." class="relative select-none" title="Overview of the whole log. Drag the bright window to pan, drag its edges to resize, or click anywhere to jump the view there." style="height:44px; background:#0b1220; border:1px solid #1e293b;  overflow:hidden; cursor:pointer;">
             <canvas id="miniCanvas" style="position:absolute; inset:0;"></canvas>
             <div id="miniWindow" style="position:absolute; top:0; bottom:0; background:rgba(56,189,248,0.18); border:1px solid #38bdf8;">
               <div class="mini-handle" data-edge="L"></div><div class="mini-handle" data-edge="R"></div>
@@ -233,10 +233,10 @@
             <div id="miniPlayhead" title="Scrubber position"></div>
           </div>
         </div>
-        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Operator / Programmer / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 rounded-sm align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; the <b>Manual Runs</b> lane collects every hand-started run whatever the Zones dropdown says — click <span class="font-mono">MR</span> to show/hide its zones · click a bar to open its start line in the feed · corner arrows jump to the run's other edge · red ticks jump to the alert · a feed row's “↗ timeline” comes back here and rings the run in amber (rows whose event lives on the <b>Interventions &amp; Alerts</b> timeline say “↗ events” and go there instead; a row with nothing to point at has no button) · ←/→ to step the window.</p>
+        <p class="text-xs text-slate-500 mb-3"><span class="cursor-help" title="Scheduled run — started automatically by a program schedule."><span class="inline-block w-2 h-2 align-middle" style="background:#22c55e"></span> scheduled</span> &nbsp; <span class="cursor-help" title="Manual run — started by a person (User / Operator / Programmer / Administrator), not the schedule. Shown with an amber inset border and an “M” badge."><span class="inline-block w-2 h-2 align-middle" style="background:#f59e0b"></span> manual (amber border / “M”)</span> &nbsp; <span class="cursor-help" title="Stopped early — the run ended on a pause, disable, or alarm before finishing normally. A hatched red bar labelled “ended early (inferred from run list)” had no DONE logged, so its end was inferred from the controller’s run-list heartbeat."><span class="inline-block w-2 h-2 align-middle" style="background:#ef4444"></span> stopped by pause/alarm</span> &nbsp; <span class="cursor-help" title="Soaking — a cycle-and-soak zone is between watering cycles (water absorbing, valve off). Toggle “Soak” off to collapse the cycles back into one solid bar."><span class="inline-block w-2 h-2 align-middle" style="background:#38bdf8;opacity:.5;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.4),rgba(255,255,255,.4) 1.5px,transparent 1.5px,transparent 3px)"></span> soaking</span> &nbsp;·&nbsp; the <b>Manual Runs</b> lane collects every hand-started run whatever the Zones dropdown says — click <span class="font-mono">MR</span> to show/hide its zones · click a bar to open its start line in the feed · corner arrows jump to the run's other edge · red ticks jump to the alert · a feed row's “↗ timeline” comes back here and rings the run in amber (rows whose event lives on the <b>Interventions &amp; Alerts</b> timeline say “↗ events” and go there instead; a row with nothing to point at has no button) · ←/→ to step the window.</p>
 
         <div id="timeWrap" class="relative">
-          <div id="playhead"><div id="playheadTime"></div></div>
+          <div id="playhead" role="slider" tabindex="0" aria-label="Playhead controller time" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0"><div id="playheadTime"></div></div>
           <div id="swimlane"></div>
           <div id="hydroBox" class="relative" style="height:180px;">
             <canvas id="hydroChart"></canvas>
@@ -247,7 +247,7 @@
       </div>
 
       <!-- INTERVENTIONS & ALERTS timeline (separate, togglable, off by default) -->
-      <div id="eventTlCard" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+      <div id="eventTlCard" class="hidden bg-slate-900 border border-slate-800 p-5 mb-6">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 class="text-sm font-semibold text-slate-200">Interventions &amp; Alerts <span id="eventTlInfo" class="text-xs font-normal text-slate-500"></span></h3>
           <span class="text-xs text-slate-500">click a marker for the reason &amp; jump to it in the feed</span>
@@ -257,15 +257,15 @@
       </div>
 
       <!-- BOTTOM PANE: Activity Audit feed -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div class="bg-slate-900 border border-slate-800 overflow-hidden">
         <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
           <h3 class="text-sm font-semibold text-slate-200">Activity Audit Feed <span class="text-xs font-normal text-slate-500">— alarms pinned on top; click a row to expand; load more for the full log</span></h3>
           <span id="feedInfo" class="text-xs text-slate-500"></span>
         </div>
         <div class="px-4 py-2 border-b border-slate-800">
-          <input id="feedSearch" type="search" autocomplete="off" placeholder="Search all events — date, action, zone, program, keyword…"
-            class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-md px-3 py-1.5 placeholder-slate-500 focus:outline-none focus:border-sky-500"
-            title="Search across every loaded event (date, action, category, subject, trigger, raw line). Space-separated terms all must match. Results span the whole log — use a row's ↗ timeline button to jump to one.">
+          <input id="feedSearch" aria-label="Search all events" type="search" autocomplete="off" placeholder="Search all events — date, action, zone, program, keyword…"
+            class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 placeholder-slate-500 focus:outline-none focus:border-sky-500"
+            title="Search across every filtered event (date, action, category, subject, trigger, raw line). Space-separated terms all must match. Results span the whole log — use a row's ↗ timeline button to jump to one.">
         </div>
         <!-- sortable column header (stays put while rows scroll below) -->
         <div id="feedHead" class="hidden px-4 py-2 flex flex-wrap items-baseline gap-x-3 text-[10px] font-semibold uppercase tracking-wider border-b border-slate-800 bg-slate-950/50 select-none">
@@ -295,26 +295,26 @@
 </aside>
 
 <!-- ================= HOW-TO-USE / GUIDE MODAL ================= -->
-<div id="guideModal" class="hidden fixed inset-0 z-50 bg-black/60 p-4 sm:p-8" data-html2canvas-ignore="true">
-  <div class="mx-auto max-w-3xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl flex flex-col" style="max-height:90vh;">
+<dialog id="guideModal" aria-labelledby="guideTitle" class="w-full max-w-3xl m-auto p-4 text-slate-200 bg-transparent border-0" data-html2canvas-ignore="true">
+  <div class="mx-auto max-w-3xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col" style="max-height:90vh;">
     <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
-      <h3 class="text-base font-bold text-white">How to use this dashboard</h3>
-      <button id="guideClose" class="text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/60 rounded-md px-2 py-1 text-sm transition-colors">✕ Close</button>
+      <h3 id="guideTitle" class="text-base font-bold text-white">How to use this dashboard</h3>
+      <button id="guideClose" class="text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/60 px-2 py-1 text-sm transition-colors">✕ Close</button>
     </div>
     <div id="guideBody" class="p-5 overflow-y-auto space-y-6 text-sm"></div>
   </div>
-</div>
+</dialog>
 
 <!-- ================= REFERENCE / GLOSSARY MODAL ================= -->
-<div id="refModal" class="hidden fixed inset-0 z-50 bg-black/60 p-4 sm:p-8" data-html2canvas-ignore="true">
-  <div class="mx-auto max-w-5xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl flex flex-col" style="max-height:90vh;">
+<dialog id="refModal" aria-labelledby="refTitle" class="w-full max-w-5xl m-auto p-4 text-slate-200 bg-transparent border-0" data-html2canvas-ignore="true">
+  <div class="mx-auto max-w-5xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col" style="max-height:90vh;">
     <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
-      <h3 class="text-base font-bold text-white">Event Log Reference</h3>
-      <button id="refClose" class="text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/60 rounded-md px-2 py-1 text-sm transition-colors">✕ Close</button>
+      <h3 id="refTitle" class="text-base font-bold text-white">Event Log Reference</h3>
+      <button id="refClose" class="text-slate-400 hover:text-rose-300 border border-slate-700 hover:border-rose-500/60 px-2 py-1 text-sm transition-colors">✕ Close</button>
     </div>
     <div id="refBody" class="p-5 overflow-y-auto space-y-6 text-sm"></div>
   </div>
-</div>
+</dialog>
 
 </body>
 </html>

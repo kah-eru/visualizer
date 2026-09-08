@@ -172,6 +172,19 @@ describe("selectFeedRows (whole-log feed, not window-limited — mirrors the 6/2
   it("search filters across all days, not just a window", () => {
     expect(selectFeedRows(all, { query: "zn=3" })).toEqual([e701]); // only the 7/1 row, found from the whole log
   });
+  it("searches start/done markers while keeping them hidden for an empty or blank query", () => {
+    const done = at("06/30/26 09:05:00", "ZN", "DN", "SY", "ZN=6", "TX=unique-finish");
+    expect(selectFeedRows([...all, done], { query: "zone 6 water" })).toEqual([marker630]);
+    expect(selectFeedRows([...all, done], { query: "UNIQUE-FINISH done" })).toEqual([done]);
+    expect(selectFeedRows(all, { query: "   " })).not.toContain(marker630);
+  });
+  it("uses natural ordering for text columns and event time for equal keys", () => {
+    const z10 = at("06/30/26 09:00:00", "ZN", "RD", "SY", "ZN=10");
+    const later = at("06/30/26 10:00:00", "ZN", "RD", "SY", "ZN=2");
+    const earlier = at("06/30/26 08:00:00", "ZN", "RD", "SY", "ZN=2");
+    expect(selectFeedRows([z10, later, earlier], { sortCol: "subject" })).toEqual([earlier, later, z10]);
+    expect(selectFeedRows([z10, later, earlier], { sortCol: "subject", sortDir: "desc" })).toEqual([z10, later, earlier]);
+  });
   it("reveals a duration marker only when its id is in revealedIds", () => {
     expect(selectFeedRows(all, {})).not.toContain(marker630);
     expect(selectFeedRows(all, { revealedIds: new Set([marker630._id]) })).toContain(marker630);

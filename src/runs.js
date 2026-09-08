@@ -19,7 +19,7 @@ export function makeRun(key, start, end, startEv, stopEv, terminated, ongoing, i
 // Pair start→stop events into runs. mode "program": PG SR/RN/MR → SP/DN/OF;
 // "zone": ZN WT → DN; "mainline": ML RN → OF (ignoring DS/disable).
 export function buildRunIntervals(evs, mode, globalEnd) {
-  const groups = {};
+  const groups = Object.create(null);
   for (const e of evs) {
     if (mode === "program") {
       if (e.catCode !== "PG" || e.program == null) continue;
@@ -39,15 +39,16 @@ export function buildRunIntervals(evs, mode, globalEnd) {
   // For zone mode, precompute the run-list signals used to close a run that never logs a DN:
   //   maxZnRlTs   — latest `ZN,RL` heartbeat anywhere (proves a zone left the active list when a
   //                 later run-list no longer names it), and
-  //   mvPmStops   — sorted MV/PM shutdown times (fallback when a zone never appears in a run-list).
+  //   mvPmStops   — sorted MV/PM shutdown events (fallback with explicit shared supply identity).
   let maxZnRlTs = 0;
-  const mvPmStops = [];
+  const mvPmStops = [], heartbeats = [];
   if (mode === "zone") {
     for (const e of evs) {
-      if (e.catCode === "ZN" && e.actCode === "RL") { const t = e.ts.getTime(); if (t > maxZnRlTs) maxZnRlTs = t; }
-      else if ((e.catCode === "MV" || e.catCode === "PM") && e.actCode === "DN") mvPmStops.push(e.ts.getTime());
+      if (e.catCode === "ZN" && e.actCode === "RL") { const t = e.ts.getTime(); heartbeats.push(t); if (t > maxZnRlTs) maxZnRlTs = t; }
+      else if ((e.catCode === "MV" || e.catCode === "PM") && e.actCode === "DN") mvPmStops.push(e);
     }
-    mvPmStops.sort((a, b) => a - b);
+    heartbeats.sort((a, b) => a - b);
+    mvPmStops.sort((a, b) => a.ts - b.ts);
   }
 
   const out = [];
@@ -56,6 +57,7 @@ export function buildRunIntervals(evs, mode, globalEnd) {
     // lastSeen = last `ZN,RL` ts that listed this zone; marks = ordered water/soak boundaries within
     // the open run (cycle-and-soak), used to split a zone bar into watering vs soak segments.
     let open = null, openEv = null, lastSeen = null, marks = null;
+    let heartbeatIndex = 0;
     // Attach soak segments (zone mode only) to a run that actually soaked, leaving non-soak runs
     // byte-identical to before. endT closes the final segment.
     const attachSegs = (run, endT) => {
@@ -65,8 +67,16 @@ export function buildRunIntervals(evs, mode, globalEnd) {
     for (const e of list) {
       const t = e.ts.getTime();
       if (startSet.has(e.actCode)) {
+        while (heartbeatIndex < heartbeats.length && heartbeats[heartbeatIndex] < t) heartbeatIndex++;
+        // A later start after disappearance is a new session. An explicit SO still means the
+        // controller is between watering cycles, where absence from the watering list is expected.
+        if (mode === "zone" && open != null && marks.at(-1).type !== "soak" && lastSeen != null &&
+          heartbeats[heartbeatIndex - 1] > lastSeen) {
+          out.push(attachSegs(makeRun(key, open, lastSeen, openEv, null, true, false, true), lastSeen));
+          open = null;
+        }
         if (open == null) { open = t; openEv = e; lastSeen = null; marks = [{ t, type: "water" }]; }
-        else marks.push({ t, type: "water" }); // a later WT while open = soak ended, next cycle begins
+        else { marks.push({ t, type: "water" }); lastSeen = null; } // soak ended, next cycle begins
       }
       else if (stopSet.has(e.actCode)) { if (open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e), t)); open = null; openEv = null; lastSeen = null; marks = null; } }
       else if ((e.actCode === "PA" || e.actCode === "DR") && open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e, true), t)); open = null; openEv = null; lastSeen = null; marks = null; }
@@ -74,7 +84,7 @@ export function buildRunIntervals(evs, mode, globalEnd) {
       else if (e.actCode === "RL" && open != null) { lastSeen = t; } // run-list heartbeat
     }
     if (open != null) {
-      const run = mode === "zone" ? closeOpenZoneRun(key, open, openEv, lastSeen, maxZnRlTs, mvPmStops, globalEnd)
+      const run = mode === "zone" && marks.at(-1).type !== "soak" ? closeOpenZoneRun(key, open, openEv, lastSeen, maxZnRlTs, mvPmStops, globalEnd, marks.at(-1).t)
         : makeRun(key, open, globalEnd, openEv, null, false, true);
       out.push(attachSegs(run, run.end));
     }
@@ -122,15 +132,27 @@ function buildSoakSegments(marks, end) {
 // zone, so "ongoing to end-of-log" badly overstates the run. Infer the real end from the run-list:
 //   Tier 1 — if the zone last appeared in a `ZN,RL` heartbeat before a later run-list (it dropped out
 //            of the active list), it stopped then → close at that last heartbeat (terminated/inferred).
-//   Tier 2 — if it never appeared in any run-list, fall back to the first MV/PM shutdown after it
-//            started (the supply was cut) → close there (terminated/inferred).
+//   Tier 2 — if it never appeared in any run-list, a shutdown of its explicitly linked supply
+//            closes the run. Missing topology cannot establish which zone lost its supply.
 //   Tier 3 — otherwise it's still in the final heartbeat / genuinely cut off by end-of-log → ongoing.
-function closeOpenZoneRun(key, open, openEv, lastSeen, maxZnRlTs, mvPmStops, globalEnd) {
+function closeOpenZoneRun(key, open, openEv, lastSeen, maxZnRlTs, mvPmStops, globalEnd, lastWater) {
   if (lastSeen != null) {
     if (maxZnRlTs > lastSeen) return makeRun(key, open, lastSeen, openEv, null, true, false, true); // Tier 1
     return makeRun(key, open, globalEnd, openEv, null, false, true); // Tier 3: still in the last run-list
   }
-  const stop = mvPmStops.find(t => t > open); // Tier 2
-  if (stop != null) return makeRun(key, open, stop, openEv, null, true, false, true);
+  const stop = mvPmStops.find(e => e.ts.getTime() > lastWater && sharesSupply(openEv, e)); // Tier 2
+  if (stop != null) return makeRun(key, open, stop.ts.getTime(), openEv, null, true, false, true);
   return makeRun(key, open, globalEnd, openEv, null, false, true); // Tier 3
+}
+
+function sharesSupply(zone, stop) {
+  let matched = false;
+  for (const key of ["ML", "CP", "WS", "MV", "PM"]) {
+    const a = zone.pairs[key]?.raw;
+    const b = stop.pairs[key]?.raw ?? (stop.catCode === key && stop.zones.length === 1 ? stop.zones[0] : null);
+    if (a == null || b == null) continue;
+    if (a !== b) return false;
+    matched = true;
+  }
+  return matched;
 }

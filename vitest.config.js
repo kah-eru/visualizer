@@ -1,8 +1,7 @@
 import { defineConfig } from "vitest/config";
 
 // Unit tests run in Node against the dependency-free src modules (parse/runs/format/classify).
-// TZ is pinned to UTC so the wall-clock Date logic (parseTimestamp builds a *local* Date) is
-// deterministic on every machine and in CI — local getters then equal the parsed input.
+// Controller wall-clock values use UTC components; keep the test process deterministic too.
 export default defineConfig({
   test: {
     environment: "node",
@@ -11,10 +10,11 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**"],
-      reporter: ["text", "html"],
+      // Vitest hides fully covered files in agent sessions unless explicitly disabled.
+      reporter: [["text", { skipFull: false }], "html", "json-summary"],
       // app.js is the DOM layer: it can't even be imported in Node, so it reports ~0% and is
       // EXPECTED to. That number is the point — it's the visible measure of the blind spot
-      // (see TESTING_AUDIT.md Gap 1), shrinking as more logic is extracted into pure modules.
+      // (see TESTING_AUDIT.md). Playwright separately checks the production DOM integration.
       //
       // Thresholds therefore cover the pure modules only, per-file. A global threshold would fail
       // on app.js every run and teach everyone to ignore the whole signal. These are set just under

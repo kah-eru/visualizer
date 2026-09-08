@@ -124,9 +124,6 @@ export const OBJECT_KEY_MAP = {ZN:"Zone",MV:"Master Valve",PM:"Pump",MS:"Moistur
 
 export const STOP_CONDITION_MAP = {IM:"Stop Immediately",CY:"Stop at End of Cycle"};
 export const ZONE_MODE_MAP = {TM:"Timed",PR:"Primary",LK:"Linked"};
-export const EVENT_TYPE_MAP = {PT:"Event Start",PS:"Event Pause",PP:"Event Stop"};
-export const EVENT_TRIGGER_MAP_SPEC = {NA:"Event None",MS:"Event on Moisture",SW:"Event on Event Switch",TS:"Event on Temperature",RG:"Event on Precipitation",PS:"Event on Pressure",DT:"Event on Date and Time"};
-export const EVENT_DAY_TYPE_MAP = {WD:"Event Day Weekday",EV:"Event Day Even",OS:"Event Day Odd Skip 31st",OD:"Event Day Odd",IN:"Event Day Interval",CI:"Event Day Smart Intervals",AL:"Event Day On Demand"};
 
 /* Context-scoped value decode registry. For each enumerated key, `map` decodes
    its value; optional `cats` limits decoding to those Column-B categories so a
