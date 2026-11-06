@@ -1,0 +1,18 @@
+{
+  "name": "bounty",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Earn LLM API credits by completing sponsored integration challenges (Wizard-of-Oz prototype).",
+  "type": "commonjs",
+  "bin": {
+    "bounty": "cli.js"
+  },
+  "scripts": {
+    "server": "node server.js",
+    "bounty": "node cli.js",
+    "smoke": "node smoke-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

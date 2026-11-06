@@ -1,0 +1,53 @@
+{
+  "challenges": [
+    {
+      "id": "resend-first-email",
+      "sponsor": "Resend",
+      "title": "Send your first transactional email",
+      "reward": 500,
+      "rewardUnit": "credits",
+      "estMinutes": 10,
+      "verify": "inbox",
+      "blurb": "Wire up Resend and send a real transactional email from your own code.",
+      "steps": [
+        "Create a free account at resend.com and grab an API key.",
+        "Install the SDK:  npm i resend",
+        "Send an email to the verification address shown by `bounty earn resend-first-email --start`.",
+        "Run `bounty verify resend-first-email --proof <message-id>` with the id Resend returns."
+      ],
+      "proofLabel": "Resend message id (from the API response)"
+    },
+    {
+      "id": "stripe-first-charge",
+      "sponsor": "Stripe",
+      "title": "Create a test-mode PaymentIntent",
+      "reward": 400,
+      "rewardUnit": "credits",
+      "estMinutes": 8,
+      "verify": "url",
+      "blurb": "Spin up a test-mode charge and confirm it resolves.",
+      "steps": [
+        "Create a Stripe account, stay in test mode.",
+        "Create a PaymentIntent with the test card 4242 4242 4242 4242.",
+        "Run `bounty verify stripe-first-charge --proof <payment_intent_id>`."
+      ],
+      "proofLabel": "PaymentIntent id (pi_...)"
+    },
+    {
+      "id": "turso-edge-db",
+      "sponsor": "Turso",
+      "title": "Query an edge database",
+      "reward": 350,
+      "rewardUnit": "credits",
+      "estMinutes": 12,
+      "verify": "local",
+      "blurb": "Create a libSQL database and run a query against it from local code.",
+      "steps": [
+        "Install the Turso CLI and create a database.",
+        "Run a SELECT from a Node script using @libsql/client.",
+        "Run `bounty verify turso-edge-db --proof <db-url>`."
+      ],
+      "proofLabel": "Database URL (libsql://...)"
+    }
+  ]
+}
