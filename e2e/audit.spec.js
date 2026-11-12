@@ -187,3 +187,22 @@ test('profiles a 20,000-event synthetic import with a bounded initial feed', asy
   await expect(page.locator('.feed-row').first()).toContainText('Zone 1');
   console.log(`20,000-event synthetic import: ${Math.round(loaded-start)} ms; first subject sort: ${Math.round(performance.now()-loaded)} ms; CSV ${(Buffer.byteLength(csv)/1024/1024).toFixed(2)} MB`);
 });
+
+test('keyboard pan keeps the minimap window width at the data edge', async ({ page }) => {
+  await load(page, history);
+  await page.locator('[data-win="hour"]').click();
+  const mini = page.locator('#miniMap'), box = page.locator('#miniWindow');
+  await mini.focus();
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowLeft'); // move well inside the 5 h log
+  const width = (await box.boundingBox()).width;
+  for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowRight'); // pan past the right edge
+  expect(Math.abs((await box.boundingBox()).width - width)).toBeLessThan(1);
+});
+
+test('outside click closes a lane dropdown and resets aria-expanded', async ({ page }) => {
+  await load(page, history);
+  await page.locator('#ddZoneBtn').click();
+  await expect(page.locator('#ddZoneBtn')).toHaveAttribute('aria-expanded', 'true');
+  await page.locator('#auditFeed').click({ position: { x: 5, y: 5 } });
+  await expect(page.locator('#ddZoneBtn')).toHaveAttribute('aria-expanded', 'false');
+});

@@ -115,6 +115,13 @@ describe.skipIf(!has("Events1000.csv"))("pipeline · Events1000.csv (local only)
     expect(events.filter(e => e.isNoise).length).toBe(3742);
     expect(events.filter(e => e.isAlert && e.isNoise).length).toBe(3742);
   });
+
+  it("resumes paused programs on PG,WT instead of drawing 0-second SR→PA bars", () => {
+    // Was 7 program runs, 6 of them 0-second SR→PA bars; the PG,WT resumes were missing.
+    const programs = data().runs("program");
+    expect(programs.length).toBe(5);
+    expect(programs.some(r => r.end <= r.start)).toBe(false);
+  });
 });
 
 describe.skipIf(!has("Evnt_202606.csv"))("pipeline · Evnt_202606.csv (local only)", () => {
@@ -139,6 +146,8 @@ describe.skipIf(!has("Evnt_202606.csv"))("pipeline · Evnt_202606.csv (local onl
     expect(runs("program").length).toBe(148);
     // Five heartbeat discontinuities split two formerly merged missing-DONE spans into 4 + 3 sessions.
     expect(runs("zone").length).toBe(388);
+    // 6 missing-DONE inferences + 3 late stops that arrived 19-39 h after the zone left the run-list.
+    expect(runs("zone").filter(r => r.inferred).length).toBe(9);
   });
 });
 
@@ -155,6 +164,8 @@ describe.skipIf(!has("testmanual.csv"))("pipeline · testmanual.csv (local only)
     const { runs } = data();
     expect(runs("zone").filter(r => r.manual).length).toBe(273);
     expect(runs("program").filter(r => r.manual).length).toBe(0);
+    // One manual zone run is closed by ZN,DS (disabled) rather than left to a later DN.
+    expect(runs("zone").filter(r => r.manual && r.kind === "run-terminated").length).toBe(1);
   });
 
   it("never attributes a manual run to a real program", () => {

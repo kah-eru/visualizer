@@ -45,15 +45,15 @@ Run intervals come from complete history with the full dataset ending as the fal
 
 | Group | Opens | Closes normally |
 | --- | --- | --- |
-| Program | `PG` `SR`, `RN`, `MR` | `SP`, `DN`, `OF` |
+| Program | `PG` `SR`, `RN`, `MR`, `WT` | `SP`, `DN`, `OF` |
 | Zone | `ZN` `WT`, `MR` | `DN` |
 | Mainline | `ML` `RN` | `OF` |
 
-`PA`/`DR` terminate an open run. A stop without a start creates no run. Zone `SR` is queue/schedule evidence, not watering; zone `SP` is a cascade stop echo and is deliberately not a zone boundary.
+`PA`/`DR` terminate an open run, and zone `DS` (disabled) terminates an open zone run; mainline `DS` is ignored. `PG` `WT` starts or resumes a program run, so a paused program keeps its real run. A stop without a start creates no run, and zero-length runs are dropped. Zone `SR` is queue/schedule evidence, not watering; zone `SP` is a cascade stop echo and is deliberately not a zone boundary.
 
 Effective program inference remembers the last program associated with each zone in chronological order so untagged zone stop/soak rows remain attributable. Expanded programs use explicit `PG`/`ZN` links for no-runtime zone rows. Runtime attribution honors real program tags; an orphan tag may fall back to overlapping program intervals. Overlap is an inference, not established controller topology.
 
-Missing-DONE zone runs may end at the last run-list heartbeat before disappearance. Disappearance followed by a later start separates sessions instead of merging them. Explicit soak periods preserve cycle continuity. Supply shutdown fallback requires matching explicit supply identity; an unrelated mainline/pump shutdown cannot establish a zone's stop. Insufficient evidence leaves a run ongoing. Inferred ends remain labeled estimates.
+Missing-DONE zone runs may end at the last run-list heartbeat before disappearance. A logged stop that arrives after the zone has left the run-list heartbeats also closes the run at the last listing, labeled inferred. Disappearance followed by a later start separates sessions instead of merging them. Explicit soak periods preserve cycle continuity. Supply shutdown fallback requires matching explicit supply identity (`ML`/`CP`/`WS`/`MV`/`PM` on the zone start row); an unrelated mainline/pump shutdown cannot establish a zone's stop. Zone `ER` does not end a run. Insufficient evidence leaves a run ongoing. Inferred ends remain labeled estimates.
 
 Cycle-and-soak produces one logical zone run with watering/soak segments. The Manual Runs parent is a merged visual envelope of manual zone runs, not an extra logical run. Manual zones remain available without selecting them individually. Selected zones retain rows even when no runtime exists in the window.
 
@@ -69,7 +69,7 @@ Feed ordering uses cached search text, query tokens computed once per selection,
 
 `FEED_CAP` is a 1,500-row batch size, not a permanent limit. Cache ordered selections until file/filter/search/sort/reveal inputs change. Load More appends rows, retaining existing expansion and scroll state. Populate a row's detail only when expanded. Pan/zoom and scrubber moves should not reconstruct the feed.
 
-Route marker jumps through stable event IDs and the shared reveal path. Reveal can extend pagination, include the requested event outside current filters, and clear an excluding search. Multiple events at one timestamp must remain distinguishable. Run-start lookup uses full history. Feed-to-timeline buttons appear only where a timeline can point to the event, enable the required lane/marker, and leave a persistent location highlight. Scroll the page and the inner feed deliberately so they do not fight each other.
+Route marker jumps through stable event IDs and the shared reveal path. Reveal always clears the feed search, can extend pagination, and includes the requested event outside current filters. Multiple events at one timestamp must remain distinguishable. Run-start lookup uses full history. Feed-to-timeline buttons appear only where a timeline can point to the event, enable the required lane/marker, and leave a persistent location highlight. Scroll the page and the inner feed deliberately so they do not fight each other.
 
 Use delegated container listeners for generated rows. Guide/reference content is built on first open. Native dialogs provide focus containment; closing or Escape restores opener focus. Upload, lane labels, run bars, markers, and row expansion support keyboard operation. Focused playhead arrows/Page Up/Page Down/Home/End adjust time; minimap arrows pan and +/- zoom. Keep chart/main content shrinkable, and put the scrubber drawer into normal flow on narrow screens.
 
@@ -83,7 +83,7 @@ Production Vite output adds a CSP allowing local scripts/assets, required inline
 
 Print uses the browser dialog, a controller/time-range stamp, and a temporary dashboard width; cleanup restores the screen. Sidebar, controls, minimap, drawer, and dialogs are omitted. The feed retains a clipped viewport, so PDF is a view report, not a complete CSV export. Browser pagination, selected print settings, and device performance still matter.
 
-Keep real logs and local vendor documents out of Git, `public/`, build artifacts, and feedback tests. Use the synthetic `Evnt_flow_test.csv`; local-only pipeline fixtures must load lazily inside tests because `describe.skipIf` still executes its collection callback.
+Keep real logs and local vendor documents out of Git, `public/`, build artifacts, and feedback tests. Raw customer logs are not test fixtures and are absent from a clean clone. Use the synthetic `Evnt_flow_test.csv`; local-only pipeline fixtures must load lazily inside tests because `describe.skipIf` still executes its collection callback.
 
 ## Verification and remaining limits
 

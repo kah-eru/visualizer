@@ -16,7 +16,7 @@ export const GPM_TO_LPM = 3.785;   // AC / EX
 export const PSI_TO_KPA = 6.894;   // PR
 export const FLOW_KEYS = new Set(["AC","EX"]);
 export const PRESSURE_KEYS = new Set(["PR"]);
-export const FEED_CAP = 1500; // cap DOM rows in the audit feed for performance on large logs
+export const FEED_CAP = 1500; // audit feed batch size: rows appended per "Load more"
 
 // Low-level chatter (substation, networking, two-wire bus) hidden unless "Advanced" is checked.
 // Matched on the raw column-B category code.

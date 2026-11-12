@@ -6,11 +6,11 @@ Open a Baseline controller event-log CSV to inspect what ran, when, and why it s
 
 1. Choose a CSV through Data Source, or drag it onto the upload area. The limit is 20 MB. Invalid/header rows are counted when skipped; CSV syntax errors or no valid events reject the import. A rejected file leaves your previous successful dataset and filename on screen.
 2. Read the Execution Timeline: scheduled runs, manual runs with an M badge, stopped-early hatching, and watering/soak segments. Expand a program to see its zones. Manual Runs gathers manual zone runs even when those zones are not individually selected.
-3. Select a run bar to reveal its start event in the Activity Audit Feed. Select an alert/intervention/blocker marker to reveal that exact event, including when several events share its timestamp. The feed can load later batches, include the target outside current filters, or clear an excluding search.
+3. Select a run bar to reveal its start event in the Activity Audit Feed. Select an alert/intervention/blocker marker to reveal that exact event, including when several events share its timestamp. The feed clears its search, loads later batches when needed, and includes the target outside current filters.
 4. Move the playhead to inspect the At Playhead panel. Snap selects nearby run edges. Tags can combine manual, stopped early, soaking, and over. At the exact logged end, a run remains listed as over but is excluded from Running now.
 5. Turn on Flow for numeric Actual/Expected flow and pressure. Pressure-only logs are supported. Missing or invalid readings are not plotted; message priority is not pressure. Turn on Events for the separate Interventions & Alerts timeline and decoded reasons.
 
-Selected zones keep their rows without runtime, so blocker events can still be inspected. Soak toggles the visual segments, not the logical run count. Inferred ends are estimates from run-list or explicitly linked supply evidence; absent evidence can leave a run ongoing.
+Selected zones keep their rows without runtime, so blocker events can still be inspected. Soak toggles the visual segments, not the logical run count. Inferred ends are estimates from run-list or explicitly linked supply evidence; a stop logged after a zone left the run list also ends at the last listing and is labeled inferred. Disabling a zone ends its open run. Absent evidence can leave a run ongoing.
 
 ## Windows, lanes, and event filters
 

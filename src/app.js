@@ -139,6 +139,7 @@ function handleFile(file) {
     worker: false,
     complete: (results) => {
       if (generation !== uploadGeneration) return;
+      let committed = false;
       try {
         if (results.errors.length) throw new Error(`CSV parse error: ${results.errors[0].message}`);
         const events = eventsFromRows(results.data);
@@ -150,10 +151,13 @@ function handleFile(file) {
         revealedFeedIds.clear();
         clearTimeout(feedSearchTimer);
         playheadTime = null;
+        committed = true; // state replaced from here on; a later failure must not claim the old log is kept
         onDataLoaded();
         status.textContent = skipped ? `${skipped.toLocaleString()} invalid/header row(s) skipped.` : "";
       } catch (err) {
-        status.textContent = `${err.message} The previous successful log is retained.`;
+        status.textContent = committed
+          ? `The new log was loaded but could not be displayed: ${err.message}`
+          : `${err.message} The previous successful log is retained.`;
       } finally {
         fileInput.value = "";
       }
@@ -217,7 +221,7 @@ function onDataLoaded() {
   dataMinT = minT; dataMaxT = maxT;
   // Default window: the calendar DAY (midnight → midnight) containing the file's last event.
   windowUnit = "day";
-  zoomRange = snapWindow("day", maxT, { min: dataMinT, max: dataMaxT });
+  zoomRange = snapWindow("day", maxT);
   runCache = {};
   globalEndCached = dataMaxT + 1;
   runGen++;
@@ -384,7 +388,6 @@ function updateNavControls(range) {
   $("navPrev").title = "Previous " + lbl;
   $("navNext").title = "Next " + lbl;
   $("navLabel").textContent = lbl + " view";
-  $("bucketLabel").textContent = "";
   // highlight the active window-unit preset
   document.querySelectorAll("#windowPresets button[data-win]").forEach(b => {
     const active = b.getAttribute("data-win") === windowUnit;
@@ -399,7 +402,7 @@ let expandedManual = true;
 // Run start/done rows are normally hidden from the feed (drawn as bars). When the user clicks a
 // "Running now" item in the scrubber panel, we force-show that specific event's raw row here.
 let revealedFeedIds = new Set();
-// Audit-feed search + column sort. Empty query = windowed feed; non-empty = search across the whole log.
+// Audit-feed search + column sort. The feed always covers the whole log; a non-empty query filters it.
 // feedSortCol null = default order (alarms pinned, then chronological); set = sort by that column.
 let feedQuery = "", feedSortCol = null, feedSortDir = "asc";
 let lastFeedSig = null; // content signature of the last feed render, to preserve scroll on view-only moves
@@ -418,8 +421,8 @@ let locatedRun = null, locatedTs = null;
 let locatedEid = null;
 
 /* ---- Component B: Hydraulic overlay (Chart.js line, provides the shared X scale) ---- */
-// Rebuild the Chart.js instance from the full `filtered` telemetry. Only needed when `filtered` changes
-// (a data/filter change) — view-only moves use applyHydroView() instead. Datasets hold ALL points; the chart
+// Rebuild the Chart.js instance from the whole-log `telemetry` subset. Only needed after an import or a
+// display-mode change (e.g. the Flow toggle) — view-only moves use applyHydroView() instead. Datasets hold ALL points; the chart
 // clips line points to the x-axis min/max on draw, so panning is just a scale change (no dataset rebuild).
 function buildHydroChart(range) {
   const canvas = $("hydroChart");
@@ -460,7 +463,7 @@ function buildHydroChart(range) {
       onResize: scheduleOverlayLayout,
       layout: { padding: { left: 52, right: 8, top: 4 } }, // fixed gutter so swimlane lane labels fit/align
       plugins: { legend: { display: false },
-        tooltip: { mode: "index", intersect: false, callbacks: { title: items => items.length ? fmtTime(items[0].parsed.x, viewSpan) : "" } } },
+        tooltip: { mode: "nearest", axis: "x", intersect: false, callbacks: { title: items => items.length ? fmtTime(items[0].parsed.x, viewSpan) : "" } } },
       scales
     }
   });
@@ -892,7 +895,7 @@ function revealRunStart(e) {
   if (ts < r.start || ts >= r.end) panToTime(ts);
   revealFeedEvent(e);
 }
-// Resolve a visible run (group + key + start ms) back to its raw start event in `filtered`.
+// Resolve a visible run (group + key + start ms) back to its raw start event in `allEvents`.
 function findRunStartEvent(group, key, startMs) {
   return allEvents.find(e => e.ts.getTime() === startMs && (
     group === "Zone" ? (e.catCode === "ZN" && (e.actCode === "WT" || e.actCode === "MR") && e.zones.includes(String(key)))
@@ -966,7 +969,7 @@ function locateOnTimeline(ts, target, feedEvent, srcEvent) {
 /* ---- Scrubber playhead + right-edge "what's running" panel ---- */
 let playheadOn = false, playheadSnap = true, playheadTime = null;
 // The playhead line moves instantly on every pointermove, but the heavy panel rebuild
-// (two full `filtered` scans + run cloning) is coalesced to one per animation frame while dragging.
+// (event scans + run cloning) is coalesced to one per animation frame while dragging.
 let scrubPanelRaf = null;
 function scheduleScrubPanel() {
   if (scrubPanelRaf) return;
@@ -979,7 +982,7 @@ function visibleRunsAt() {
   const showScheduled = $("showScheduled").checked;
   const showManual = $("showManual").checked;
   // Called per pointermove (snapTime) and per scrubber-panel frame — memoize the (spread-heavy) build.
-  // Invalidate when the run cache is rebuilt (runGen, bumped in applyFilters) or lane/run-type changes.
+  // Invalidate when the run cache is rebuilt (runGen, bumped in onDataLoaded on import) or lane/run-type changes.
   const range = currentRange();
   const key = JSON.stringify([runGen, showScheduled, showManual, [...laneSel.program],
     [...laneSel.zone], [...laneSel.mainline], [...expandedPrograms], range.start, range.end]);
@@ -1071,7 +1074,7 @@ function updateScrubPanel() {
       const row = (lbl, v, u) => v == null ? "" : `<div class="flex justify-between"><span class="text-slate-400">${lbl}</span><span class="text-slate-200">${v.toFixed(1)} ${u}</span></div>`;
       flowHTML = `<div><div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Flow</div>
         ${row("Actual", ac, "L/min")}${row("Expected", ex, "L/min")}${row("Pressure", pr, "kPa")}
-        <div class="text-[10px] text-slate-500 mt-0.5">as of ${at ? escapeHtml(fmtTime(at, span)) : "—"}</div></div>`;
+        <div class="text-[10px] text-slate-500 mt-0.5">as of ${at ? escapeHtml(fmtTimeDate(at, span)) : "—"}</div></div>`;
     }
   }
 
@@ -1281,7 +1284,7 @@ $("resetBtn").addEventListener("click", () => {
   feedQuery = ""; feedSortCol = null; feedSortDir = "asc"; $("feedSearch").value = "";
   locatedRun = null; locatedTs = null; locatedEid = null; // drop the sticky "located on timeline" highlights
   // back to the default: the calendar day containing the last event
-  windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT, { min: dataMinT, max: dataMaxT });
+  windowUnit = "day"; zoomRange = snapWindow("day", dataMaxT);
   applyFilters();
 });
 
@@ -1348,7 +1351,7 @@ document.querySelectorAll(".ml-dd").forEach(dd => {
 });
 // click outside any dropdown closes open panels
 document.addEventListener("click", e => {
-  if (!e.target.closest(".ml-dd")) document.querySelectorAll(".ml-dd-panel").forEach(p => p.classList.add("hidden"));
+  if (!e.target.closest(".ml-dd")) closeLaneDropdowns();
 });
 
 /* ---- Scrubber wiring ---- */
@@ -1520,8 +1523,9 @@ miniMap.addEventListener("pointerdown", e => {
   if (handle) miniDrag = { mode: handle.getAttribute("data-edge"), range: r };
   else if (onBox) { miniDrag = { mode: "pan", startX: e.clientX, range: r }; miniWindow.classList.add("dragging"); }
   else { // click on empty track → center current-width window at the clicked time
-    const w = r.end - r.start, c = miniX2T(e.clientX - miniMap.getBoundingClientRect().left);
-    setViewRange(c - w / 2, c + w / 2); return;
+    const w = r.end - r.start, c = miniX2T(e.clientX - miniMap.getBoundingClientRect().left), f = miniFull();
+    const s = Math.max(f.s, Math.min(c - w / 2, f.e - w)); // clamp start, not each end, so width holds
+    setViewRange(s, s + w); return;
   }
   miniMap.setPointerCapture(e.pointerId);
   e.preventDefault();
@@ -1573,8 +1577,9 @@ miniMap.addEventListener("keydown", e => {
   if (!allEvents.length) return;
   const r = currentRange(), width = r.end - r.start, center = (r.start + r.end) / 2;
   if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-    const delta = width / 10 * (e.key === "ArrowLeft" ? -1 : 1);
-    setViewRange(r.start + delta, r.end + delta);
+    const delta = width / 10 * (e.key === "ArrowLeft" ? -1 : 1), f = miniFull();
+    const s = Math.max(f.s, Math.min(r.start + delta, f.e - width)); // keep width at the data edges
+    setViewRange(s, s + width);
   } else if (["+", "=", "-"].includes(e.key)) {
     const half = width * (e.key === "-" ? 1 : 0.25);
     setViewRange(center - half, center + half);
@@ -1705,7 +1710,7 @@ guideModal.addEventListener("click", e => { if (e.target === guideModal) closeGu
 
 /* ============================ Report export (native browser print → Save as PDF) ============================ */
 // We hand the dashboard to the browser's own print engine (a `@media print` stylesheet isolates
-// `#dashboard`; see styles.css) instead of rasterizing it with html2canvas — the latter froze the
+// `#dashboard`; see styles.css) instead of rasterizing it with a canvas-capture library — that froze the
 // tab on large logs (main-thread bitmap of the whole DOM at 2× scale). Native print keeps text
 // selectable and avoids building a second full-dashboard bitmap; output remains a view snapshot.
 const PRINT_WIDTH_PX = 1024;   // fits the A4-landscape printable width (~1062px @ 96dpi with 8mm margins)
@@ -1717,6 +1722,7 @@ $("pdfBtn").addEventListener("click", () => {
   // Temporary stamp prepended to the printed area (replaces the on-screen header, which print hides).
   const range = currentRange(), span = range.end - range.start;
   const cid = ($("controllerId").value || "").trim();
+  el.querySelectorAll(".pdf-stamp").forEach(s => s.remove()); // a second quick click must not stack stamps
   const stamp = document.createElement("div");
   stamp.className = "pdf-stamp";
   stamp.style.cssText = "padding:6px 4px 12px;margin-bottom:4px;border-bottom:1px solid #334155;color:#e2e8f0;font-size:13px;";
@@ -1738,8 +1744,7 @@ $("pdfBtn").addEventListener("click", () => {
 window.addEventListener("afterprint", () => {
   const el = $("dashboard");
   el.style.width = "";
-  const stamp = el.querySelector(".pdf-stamp");
-  if (stamp) stamp.remove();
+  el.querySelectorAll(".pdf-stamp").forEach(s => s.remove());
   if (allEvents.length) { hydroDirty = true; render(); }
 });
 

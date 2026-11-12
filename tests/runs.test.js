@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseRow } from "../src/parse.js";
-import { makeRun, buildRunIntervals, zoneRunInProgram, mergeSpans } from "../src/runs.js";
+import { makeRun, buildRunIntervals, zoneRunInProgram, mergeSpans, RUN_START } from "../src/runs.js";
 
 const row = (time, cat, act, trg, ...rest) => [`06/17/26 ${time} -0600`, cat, act, trg, ...rest];
 const ms = (time) => parseRow(row(time, "SY", "BT", "SY")).ts.getTime();
@@ -56,6 +56,40 @@ describe("buildRunIntervals — program mode (PG SR/RN/MR → SP/DN/OF)", () => 
     expect(runs).toHaveLength(1);
     expect(runs[0].ongoing).toBe(true);
     expect(runs[0].end).toBe(GLOBAL_END);
+  });
+
+  it("resumes a paused program on PG,WT: drops the 0-second SR→PA bar, keeps the WT→SP run", () => {
+    const evs = [
+      parseRow(row("06:00:00", "PG", "SR", "DT", "PG=3")),
+      parseRow(row("06:00:00", "PG", "PA", "WW", "PG=3")),
+      parseRow(row("09:00:00", "PG", "WT", "SY", "PG=3")),
+      parseRow(row("09:40:00", "PG", "SP", "SY", "PG=3")),
+    ];
+    const runs = buildRunIntervals(evs, "program", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ key: "3", kind: "run-scheduled", start: ms("09:00:00"), end: ms("09:40:00") });
+  });
+
+  it("keeps one program run when SR and WT arrive together while open", () => {
+    const evs = [
+      parseRow(row("06:00:00", "PG", "SR", "DT", "PG=3")),
+      parseRow(row("06:00:00", "PG", "WT", "SY", "PG=3")),
+      parseRow(row("06:30:00", "PG", "DN", "SY", "PG=3")),
+    ];
+    const runs = buildRunIntervals(evs, "program", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ start: ms("06:00:00"), end: ms("06:30:00") });
+  });
+
+  it("exports WT in the program start set (app.js resolves bar clicks with it)", () => {
+    expect([...RUN_START].sort()).toEqual(["MR", "RN", "SR", "WT"]);
+  });
+
+  it("drops zero-length runs in every mode", () => {
+    for (const [mode, cat, start, field] of [["program", "PG", "SR", "PG"], ["zone", "ZN", "WT", "ZN"], ["mainline", "ML", "RN", "ML"]]) {
+      const evs = [parseRow(row("06:00:00", cat, start, "SY", `${field}=1`)), parseRow(row("06:00:00", cat, "PA", "SY", `${field}=1`))];
+      expect(buildRunIntervals(evs, mode, GLOBAL_END)).toHaveLength(0);
+    }
   });
 
   it("ignores non-program rows", () => {
@@ -172,6 +206,67 @@ describe("buildRunIntervals — zone mode (ZN WT → DN)", () => {
     expect(runs[0].kind).toBe("run-terminated");
     expect(runs[0].end).toBe(ms("06:25:00"));
     expect(runs[0].segments.at(-1)).toEqual({ s: ms("06:20:00"), e: ms("06:25:00"), soak: false });
+  });
+
+  it("closes at the last listing, not a late DN, when the zone left the run-list first", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("06:05:00", "ZN", "RL", "SY", "ZN=1")),
+      parseRow(row("06:10:00", "ZN", "RL", "SY", "ZN=2")),
+      parseRow(row("20:00:00", "ZN", "DN", "SY", "ZN=1")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ kind: "run-terminated", inferred: true, ongoing: false, end: ms("06:05:00") });
+  });
+
+  it("closes at the last listing when a late PA or DS arrives after the zone left the run-list", () => {
+    for (const act of ["PA", "DS"]) {
+      const evs = [
+        parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1")),
+        parseRow(row("06:05:00", "ZN", "RL", "SY", "ZN=1")),
+        parseRow(row("06:10:00", "ZN", "RL", "SY", "ZN=2")),
+        parseRow(row("20:00:00", "ZN", act, "SY", "ZN=1")),
+      ];
+      expect(buildRunIntervals(evs, "zone", GLOBAL_END)).toEqual([
+        expect.objectContaining({ inferred: true, end: ms("06:05:00") }),
+      ]);
+    }
+  });
+
+  it("keeps the DN end when the only later heartbeat shares the DN second, or the zone is soaking", () => {
+    const sameSecond = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("06:05:00", "ZN", "RL", "SY", "ZN=1")),
+      parseRow(row("06:10:00", "ZN", "RL", "SY", "ZN=2")),
+      parseRow(row("06:10:00", "ZN", "DN", "SY", "ZN=1")),
+    ];
+    expect(buildRunIntervals(sameSecond, "zone", GLOBAL_END)[0]).toMatchObject({ inferred: false, end: ms("06:10:00") });
+    const soaking = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("06:05:00", "ZN", "RL", "SY", "ZN=1")),
+      parseRow(row("06:06:00", "ZN", "SO", "SY", "ZN=1")),
+      parseRow(row("06:10:00", "ZN", "RL", "SY", "ZN=2")),
+      parseRow(row("06:20:00", "ZN", "DN", "SY", "ZN=1")),
+    ];
+    expect(buildRunIntervals(soaking, "zone", GLOBAL_END)[0]).toMatchObject({ inferred: false, end: ms("06:20:00") });
+  });
+
+  it("terminates an open zone run on ZN,DS (disabled)", () => {
+    const evs = [
+      parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1")),
+      parseRow(row("06:10:00", "ZN", "DS", "US", "ZN=1")),
+    ];
+    const runs = buildRunIntervals(evs, "zone", GLOBAL_END);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ kind: "run-terminated", ongoing: false, end: ms("06:10:00") });
+  });
+
+  it("does not close program or mainline runs on DS", () => {
+    for (const [mode, cat, start, field] of [["program", "PG", "SR", "PG"], ["mainline", "ML", "RN", "ML"]]) {
+      const evs = [parseRow(row("06:00:00", cat, start, "SY", `${field}=1`)), parseRow(row("06:10:00", cat, "DS", "SY", `${field}=1`))];
+      expect(buildRunIntervals(evs, mode, GLOBAL_END)[0]).toMatchObject({ ongoing: true, end: GLOBAL_END });
+    }
   });
 
   it("attaches no segments to a plain WT→DN run with no soak (unchanged behavior)", () => {

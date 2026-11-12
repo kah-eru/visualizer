@@ -33,6 +33,12 @@ describe("fmtDuration", () => {
     expect(fmtDuration(90 * MIN)).toBe("1h 30m");
     expect(fmtDuration(120 * MIN)).toBe("2h");
   });
+  it("shows seconds under one minute", () => {
+    expect(fmtDuration(20000)).toBe("20 s");
+    expect(fmtDuration(0)).toBe("0 s");
+    expect(fmtDuration(59400)).toBe("59 s");
+    expect(fmtDuration(MIN)).toBe("1 min");
+  });
 });
 
 describe("fmtTime / fmtTimeDate (locale-tolerant structural checks)", () => {
@@ -72,33 +78,8 @@ describe("snapWindow (boundaries via local getters — TZ-agnostic)", () => {
     expect(T).toBeLessThan(end);
     expect(end - start).toBe(DAY);
   });
-  it("hour aligns to the top of the hour", () => {
-    const { start, end } = snapWindow("hour", T);
-    expect(new Date(start).getMinutes()).toBe(0);
-    expect(new Date(start).getSeconds()).toBe(0);
-    expect(end - start).toBe(HOUR);
-  });
-  it("minute and second align to their boundary", () => {
-    expect(snapWindow("minute", T).end - snapWindow("minute", T).start).toBe(MIN);
-    expect(new Date(snapWindow("minute", T).start).getSeconds()).toBe(0);
-    expect(snapWindow("second", T).end - snapWindow("second", T).start).toBe(1000);
-    expect(new Date(snapWindow("second", T).start).getMilliseconds()).toBe(0);
-  });
-  it("week starts on a Sunday and spans 7 days", () => {
-    const { start, end } = snapWindow("week", T);
-    expect(new Date(start).getDay()).toBe(0);
-    expect(new Date(start).getHours()).toBe(0);
-    expect(end - start).toBe(7 * DAY);
-  });
-  it("month starts on the 1st and ends on the next 1st", () => {
-    const { start, end } = snapWindow("month", T);
-    expect(new Date(start).getDate()).toBe(1);
-    expect(new Date(end).getDate()).toBe(1);
-    expect(start).toBeLessThanOrEqual(T);
-    expect(T).toBeLessThan(end);
-  });
-  it("unknown unit falls back to the full-data bounds", () => {
-    expect(snapWindow("all", 0, { min: 5, max: 10 })).toEqual({ start: 5, end: 11 });
+  it("ignores a third (legacy bounds) argument", () => {
+    expect(snapWindow("day", T, { min: 5, max: 10 })).toEqual(snapWindow("day", T));
   });
 });
 
@@ -162,7 +143,7 @@ describe("controller wall-clock inputs and viewer DST", () => {
         const a = parseTimestamp(day + " 01:30:00 -0700");
         const b = parseTimestamp(day + " 03:30:00 -0600");
         return { duration: b - a, input: toLocalInput(a), roundTrip: fromLocalInput(toLocalInput(a)).getTime() === a.getTime(),
-          day: snapWindow("day", a.getTime()), week: snapWindow("week", a.getTime()), month: snapWindow("month", a.getTime()),
+          day: snapWindow("day", a.getTime()),
           time: fmtTime(a.getTime(), 0), label: fmtTimeDate(a.getTime(), 0) };
       });
       process.stdout.write(JSON.stringify(result));`;

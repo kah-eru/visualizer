@@ -22,7 +22,7 @@
     </div>
 
     <!-- File upload (excluded from PDF via data attribute) -->
-    <section id="uploadSection" class="mb-6" data-html2canvas-ignore="true">
+    <section id="uploadSection" class="mb-6" data-print-hide="true">
       <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Data Source</label>
       <label for="fileInput" id="dropZone" class="border-2 border-dashed border-slate-700 p-4 text-center transition-colors cursor-pointer">
         <input type="file" id="fileInput" accept=".csv" class="sr-only" aria-label="Upload controller CSV">
@@ -151,7 +151,7 @@
         </label>
       </div>
 
-      <button id="resetBtn" class="w-full mt-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium py-2 transition-colors" data-html2canvas-ignore="true">Reset Filters</button>
+      <button id="resetBtn" class="w-full mt-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm font-medium py-2 transition-colors" data-print-hide="true">Reset Filters</button>
     </div>
   </aside>
 
@@ -163,16 +163,16 @@
         <p id="subtitle" class="text-sm text-slate-400">Upload a controller event log (.csv) to begin.</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <input id="controllerId" aria-label="Controller ID" type="text" placeholder="Controller ID" title="Stamped on the printed report" class="bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 w-40" data-html2canvas-ignore="true">
-        <button id="guideBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
+        <input id="controllerId" aria-label="Controller ID" type="text" placeholder="Controller ID" title="Stamped on the printed report" class="bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500 w-40" data-print-hide="true">
+        <button id="guideBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-print-hide="true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
           How to use
         </button>
-        <button id="refBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
+        <button id="refBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-print-hide="true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9h.01M11 12h1v4h1m-1-9a9 9 0 110 18 9 9 0 010-18z"/></svg>
           Reference
         </button>
-        <button id="pdfBtn" title="Open your browser's print dialog for this dashboard — choose “Save as PDF” to export a file, or send it to a printer." class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-html2canvas-ignore="true">
+        <button id="pdfBtn" title="Open your browser's print dialog for this dashboard — choose “Save as PDF” to export a file, or send it to a printer." class="bg-sky-500 hover:bg-sky-400 text-slate-900 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2" data-print-hide="true">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           Print / Save as PDF
         </button>
@@ -193,7 +193,7 @@
       <div id="timelineCard" class="bg-slate-900 border border-slate-800 p-5 mb-6">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 class="text-sm font-semibold text-slate-200">Execution Timeline</h3>
-          <div class="flex flex-wrap items-center gap-2" data-html2canvas-ignore="true">
+          <div class="flex flex-wrap items-center gap-2" data-print-hide="true">
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Draggable playhead with a live info panel"><input type="checkbox" id="scrubberOn" checked class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-amber-500">Scrubber</label>
             <label class="flex items-center gap-1 text-xs text-slate-300 cursor-pointer" title="Snap the playhead to block start/end edges"><input type="checkbox" id="scrubberSnap" checked class="w-3.5 h-3.5 bg-slate-800 border-slate-600 accent-amber-500">Snap</label>
             <span class="text-slate-700">|</span>
@@ -207,7 +207,7 @@
           </div>
         </div>
         <!-- view-window presets -->
-        <div class="flex flex-wrap items-center gap-2 mb-2 text-xs" data-html2canvas-ignore="true">
+        <div class="flex flex-wrap items-center gap-2 mb-2 text-xs" data-print-hide="true">
           <span class="text-slate-400 cursor-help" title="Set how much time the timeline shows at once. Presets centre on the scrubber playhead (or the view centre when the scrubber is off), so zooming keeps that moment in view; ◀ ▶ or the arrow keys step one window at a time.">Window:</span>
           <div id="windowPresets" class="inline-flex flex-wrap overflow-hidden border border-slate-700">
             <button data-win="all" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Fit the entire log in one view.">All</button>
@@ -218,10 +218,9 @@
             <button data-win="minute" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-minute window.">Min</button>
             <button data-win="second" class="px-2.5 py-1 bg-slate-800 text-slate-300 hover:bg-slate-700" title="Show a one-second window.">Sec</button>
           </div>
-          <span id="bucketLabel" class="text-slate-500"></span>
         </div>
         <!-- overview minimap: full data span with a draggable view-window -->
-        <div class="mb-3" data-html2canvas-ignore="true">
+        <div class="mb-3" data-print-hide="true">
           <div class="flex justify-between text-[10px] text-slate-500 mb-0.5">
             <span id="miniStart"></span><span class="text-slate-400">Full timeline — drag the window to navigate</span><span id="miniEnd"></span>
           </div>
@@ -286,7 +285,7 @@
 </div>
 
 <!-- ================= SCRUBBER INFO WINDOW (right-side drawer; opens/closes with the Scrubber toggle) ================= -->
-<aside id="scrubPanel" class="hidden fixed top-0 right-0 h-screen w-[300px] bg-slate-900 border-l border-slate-800 overflow-y-auto text-sm z-40 shadow-2xl" data-html2canvas-ignore="true">
+<aside id="scrubPanel" class="hidden fixed top-0 right-0 h-screen w-[300px] bg-slate-900 border-l border-slate-800 overflow-y-auto text-sm z-40 shadow-2xl" data-print-hide="true">
   <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800 sticky top-0 bg-slate-900">
     <span class="text-xs font-semibold uppercase tracking-wider text-amber-400">At Playhead</span>
     <button id="scrubClose" class="text-slate-500 hover:text-rose-300 text-xs">✕ Close</button>
@@ -295,7 +294,7 @@
 </aside>
 
 <!-- ================= HOW-TO-USE / GUIDE MODAL ================= -->
-<dialog id="guideModal" aria-labelledby="guideTitle" class="w-full max-w-3xl m-auto p-4 text-slate-200 bg-transparent border-0" data-html2canvas-ignore="true">
+<dialog id="guideModal" aria-labelledby="guideTitle" class="w-full max-w-3xl m-auto p-4 text-slate-200 bg-transparent border-0" data-print-hide="true">
   <div class="mx-auto max-w-3xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col" style="max-height:90vh;">
     <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
       <h3 id="guideTitle" class="text-base font-bold text-white">How to use this dashboard</h3>
@@ -306,7 +305,7 @@
 </dialog>
 
 <!-- ================= REFERENCE / GLOSSARY MODAL ================= -->
-<dialog id="refModal" aria-labelledby="refTitle" class="w-full max-w-5xl m-auto p-4 text-slate-200 bg-transparent border-0" data-html2canvas-ignore="true">
+<dialog id="refModal" aria-labelledby="refTitle" class="w-full max-w-5xl m-auto p-4 text-slate-200 bg-transparent border-0" data-print-hide="true">
   <div class="mx-auto max-w-5xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col" style="max-height:90vh;">
     <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">
       <h3 id="refTitle" class="text-base font-bold text-white">Event Log Reference</h3>

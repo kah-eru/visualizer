@@ -85,11 +85,12 @@ export function parseRow(cols) {
   const trigger = Object.hasOwn(TRIGGER_MAP, trgCode) ? TRIGGER_MAP[trgCode] : trgCode || "—";
   const isAlert = catCode === "AL" || actCode === "ER";
   const isNoise = NOISE_CATCODES.has(catCode);
-  const program = pairs.PG ? String(pairs.PG.raw) : null;
+  // Empty PG=/ML= → null, not "" (a "" key would create a run lane nothing can display).
+  const program = pairs.PG?.raw || null;
   const flow = telemetryValue({ catCode, pairs }, "AC") ?? telemetryValue({ catCode, pairs }, "EX");
   // ZN may be a single zone or a semicolon-separated list; ML is a single mainline.
   const zones = pairs.ZN ? String(pairs.ZN.raw).split(";").map(z => z.trim()).filter(Boolean) : [];
-  const mainline = pairs.ML ? String(pairs.ML.raw) : null;
+  const mainline = pairs.ML?.raw || null;
 
   const rawLine = cols.map(c => (c == null ? "" : c)).join(",");
 
