@@ -135,7 +135,7 @@ details > summary::-webkit-details-marker { display:none; }
   #scrubPanel,
   #guideModal,
   #refModal,
-  [data-html2canvas-ignore="true"] { display: none !important; }
+  [data-print-hide="true"] { display: none !important; }
 
   /* let the dashboard use the full page width */
   #appRoot { display: block !important; padding: 0 !important; }
@@ -159,7 +159,8 @@ dialog:not([open]) { display: none; }
 #dropZone { display: block; }
 #dropZone:focus-within { outline: 2px solid #38bdf8; }
 .ev-mark, .alert-mark { padding: 0; }
-#timeWrap.scrub-on, #miniMap { touch-action: none; }
+#timeWrap.scrub-on { touch-action: pan-y; }
+#miniMap { touch-action: none; }
 @media (max-width: 1023px) {
   #appRoot.scrub-open { padding-right: 0; }
   #scrubPanel { position: static; width: auto; height: auto; max-height: 480px; margin: 16px; }

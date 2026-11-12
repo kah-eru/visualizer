@@ -7,8 +7,9 @@
    are excluded, but filenames, selected filters and captured error text may
    contain log values. The payload is previewed and only sent on user action.
 
-   Submits to VITE_FEEDBACK_ENDPOINT (a Formspree form) via fetch; if that's not
-   configured or the POST fails, falls back to downloading the report as a file.
+   Submits to Web3Forms (VITE_WEB3FORMS_KEY) via fetch, or else to the generic
+   VITE_FEEDBACK_ENDPOINT; if neither is configured or the POST fails, falls back
+   to downloading the report as a file.
    Also opens when an `open-feedback` event fires (from the error banner).
    ========================================================================== */
 import { getErrorLog } from "./errors.js";
@@ -40,7 +41,7 @@ function injectButton() {
   btn.type = "button";
   btn.className =
     "bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-sm px-4 py-2 transition-colors flex items-center gap-2";
-  btn.setAttribute("data-html2canvas-ignore", "true");
+  btn.setAttribute("data-print-hide", "true");
   btn.innerHTML =
     '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-3.5-7.1L21 3v6h-6"/></svg>Feedback';
   btn.addEventListener("click", open);
@@ -55,7 +56,7 @@ function buildModal() {
   modal.id = "feedbackModal";
   modal.className = "w-full max-w-2xl m-auto p-4 text-slate-200 bg-transparent border-0";
   modal.setAttribute("aria-labelledby", "feedbackTitle");
-  modal.setAttribute("data-html2canvas-ignore", "true");
+  modal.setAttribute("data-print-hide", "true");
   modal.innerHTML = `
     <div class="mx-auto max-w-2xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col" style="max-height:90vh;">
       <div class="flex items-center justify-between px-5 py-3 border-b border-slate-800">

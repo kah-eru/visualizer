@@ -6,8 +6,8 @@
 
    What did NOT move, deliberately: all mutable state, every memo cache
    (visRunsCache/visRunsKey, runCoverCache/runCoverGen), and every DOM read. Those
-   stay in app.js because their INVALIDATION is the subtle part — e.g. applyFilters
-   does `runGen++; lastFeedSig = null;` together, and splitting the caches from the
+   stay in app.js because their INVALIDATION is the subtle part — e.g. onDataLoaded
+   bumps `runGen` when it rebuilds the run caches, and splitting the caches from the
    state they key on is how that drifts. This module is math; app.js decides when
    to call it and what to remember.
    ========================================================================== */
@@ -61,7 +61,7 @@ export function pxToTime(px, W, full) { return full.s + (px / W) * (full.e - ful
 export function timeToPx(t, W, full) { return (t - full.s) / (full.e - full.s) * W; }
 
 // Step one window-width in `dir` (±1), keeping the current width — the non-aligned nav case.
-// Calendar-aligned units re-snap via snapWindow (format.js) instead.
+// Every preset and Previous/Next step uses this; snapWindow (format.js) only sets the default day window.
 export function shiftRange(range, dir) {
   const width = range.end - range.start;
   return { start: range.start + dir * width, end: range.end + dir * width };

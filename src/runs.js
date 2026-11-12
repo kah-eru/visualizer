@@ -4,7 +4,10 @@
    ========================================================================== */
 import { HUMAN_TRIGGERS } from "./constants.js";
 
-export const RUN_START = new Set(["SR", "RN", "MR"]);
+// Program run starts. WT also starts (or resumes) a program run: some controllers log PG SR then PA
+// in the same second, then PG WT when watering really starts hours later. app.js findRunStartEvent
+// uses this set to resolve a Program bar click back to its start event.
+export const RUN_START = new Set(["SR", "RN", "MR", "WT"]);
 export const RUN_STOP  = new Set(["SP", "DN", "OF"]);
 
 export function makeRun(key, start, end, startEv, stopEv, terminated, ongoing, inferred) {
@@ -16,8 +19,10 @@ export function makeRun(key, start, end, startEv, stopEv, terminated, ongoing, i
   return { key: String(key), start, end, kind, manual, ongoing: !!ongoing, inferred: !!inferred, program };
 }
 
-// Pair start→stop events into runs. mode "program": PG SR/RN/MR → SP/DN/OF;
-// "zone": ZN WT → DN; "mainline": ML RN → OF (ignoring DS/disable).
+// Pair start→stop events into runs. mode "program": PG SR/RN/MR/WT → SP/DN/OF;
+// "zone": ZN WT/MR → DN; "mainline": ML RN → OF (ignoring DS/disable). PA/DR terminate an open run
+// in every mode; DS (disabled) also terminates one in zone mode only. A run with end <= start is
+// dropped: a zero-length bar is not a run.
 export function buildRunIntervals(evs, mode, globalEnd) {
   const groups = Object.create(null);
   for (const e of evs) {
@@ -35,6 +40,7 @@ export function buildRunIntervals(evs, mode, globalEnd) {
   // Zone runs open on WT (scheduled) or MR (manual run — logged as `ZN,MR,…,PG=MR`, no WT line).
   const startSet = mode === "program" ? RUN_START : mode === "mainline" ? new Set(["RN"]) : new Set(["WT", "MR"]);
   const stopSet  = mode === "program" ? RUN_STOP  : mode === "mainline" ? new Set(["OF"]) : new Set(["DN"]);
+  const termSet  = new Set(mode === "zone" ? ["PA", "DR", "DS"] : ["PA", "DR"]);
 
   // For zone mode, precompute the run-list signals used to close a run that never logs a DN:
   //   maxZnRlTs   — latest `ZN,RL` heartbeat anywhere (proves a zone left the active list when a
@@ -66,20 +72,25 @@ export function buildRunIntervals(evs, mode, globalEnd) {
     };
     for (const e of list) {
       const t = e.ts.getTime();
-      if (startSet.has(e.actCode)) {
+      const isStart = startSet.has(e.actCode), isStop = stopSet.has(e.actCode), isTerm = termSet.has(e.actCode);
+      // Zone left the run-list before this start/stop: a later heartbeat (strictly before t) no longer
+      // names it. Close at its last listing instead — a later start is a new session, and a late stop
+      // would overstate the run. An explicit SO still means the controller is between watering cycles,
+      // where absence from the watering list is expected. heartbeats is empty outside zone mode.
+      if (open != null && (isStart || isStop || isTerm)) {
         while (heartbeatIndex < heartbeats.length && heartbeats[heartbeatIndex] < t) heartbeatIndex++;
-        // A later start after disappearance is a new session. An explicit SO still means the
-        // controller is between watering cycles, where absence from the watering list is expected.
-        if (mode === "zone" && open != null && marks.at(-1).type !== "soak" && lastSeen != null &&
-          heartbeats[heartbeatIndex - 1] > lastSeen) {
+        if (marks.at(-1).type !== "soak" && lastSeen != null && heartbeats[heartbeatIndex - 1] > lastSeen) {
           out.push(attachSegs(makeRun(key, open, lastSeen, openEv, null, true, false, true), lastSeen));
           open = null;
+          if (!isStart) continue; // the late stop has nothing left to close
         }
+      }
+      if (isStart) {
         if (open == null) { open = t; openEv = e; lastSeen = null; marks = [{ t, type: "water" }]; }
         else { marks.push({ t, type: "water" }); lastSeen = null; } // soak ended, next cycle begins
       }
-      else if (stopSet.has(e.actCode)) { if (open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e), t)); open = null; openEv = null; lastSeen = null; marks = null; } }
-      else if ((e.actCode === "PA" || e.actCode === "DR") && open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e, true), t)); open = null; openEv = null; lastSeen = null; marks = null; }
+      else if (isStop) { if (open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e), t)); open = null; openEv = null; lastSeen = null; marks = null; } }
+      else if (isTerm && open != null) { out.push(attachSegs(makeRun(key, open, t, openEv, e, true), t)); open = null; openEv = null; lastSeen = null; marks = null; }
       else if (e.actCode === "SO" && open != null) { marks.push({ t, type: "soak" }); } // soak begins (cycle done)
       else if (e.actCode === "RL" && open != null) { lastSeen = t; } // run-list heartbeat
     }
@@ -89,7 +100,7 @@ export function buildRunIntervals(evs, mode, globalEnd) {
       out.push(attachSegs(run, run.end));
     }
   }
-  return out;
+  return out.filter(r => r.end > r.start);
 }
 
 // Merge runs into their covering spans, collecting the distinct keys in each — the envelope drawn on

@@ -54,6 +54,8 @@ export function fmtTimeDate(ms, spanMs) {
   return dtf("mdhm", { ..._MD, ..._HM }).format(d);
 }
 export function fmtDuration(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
   const m = Math.round(ms / 60000);
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60), r = m % 60;
@@ -69,21 +71,11 @@ export function windowLabel(ms) {
   return "month";
 }
 
-// Snap a window of the given unit to natural calendar boundaries around `anchorMs`
-// (day → controller midnight…next midnight, week → Sun 00:00…+7d, month → 1st…1st, etc.).
-// `bounds` = { min, max } supplies the full-data span for the default/"all" case.
-export function snapWindow(unit, anchorMs, bounds = {}) {
-  const d = new Date(anchorMs); let start, end, e;
-  switch (unit) {
-    case "second": d.setUTCMilliseconds(0); start = d.getTime(); end = start + 1000; break;
-    case "minute": d.setUTCSeconds(0, 0); start = d.getTime(); end = start + 60000; break;
-    case "hour":   d.setUTCMinutes(0, 0, 0); start = d.getTime(); end = start + 3600000; break;
-    case "day":    d.setUTCHours(0, 0, 0, 0); start = d.getTime(); end = start + 86400000; break;
-    case "week":   d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); start = d.getTime(); end = start + 604800000; break;
-    case "month":  d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0); start = d.getTime(); e = new Date(start); e.setUTCMonth(e.getUTCMonth() + 1); end = e.getTime(); break;
-    default:       start = bounds.min; end = bounds.max + 1;
-  }
-  return { start, end };
+// Snap to the controller day (UTC-encoded wall clock) containing `anchorMs`: midnight…next midnight.
+// Only "day" is used; other units navigate via shiftRange/centeredWindow. `unit` is kept for the call shape.
+export function snapWindow(unit, anchorMs) {
+  const start = Math.floor(anchorMs / 86400000) * 86400000;
+  return { start, end: start + 86400000 };
 }
 
 // Approximate duration of each window-preset unit, for a window centered on a point (the scrubber)

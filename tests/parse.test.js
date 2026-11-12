@@ -113,6 +113,13 @@ describe("parseRow", () => {
     expect(e.mainline).toBe("4");
   });
 
+  it("treats an empty PG= or ML= value as null (no lane keyed \"\")", () => {
+    const e = parseRow(row("06:00:00", "ZN", "WT", "SY", "ZN=1", "PG=", "ML= "));
+    expect(e.program).toBeNull();
+    expect(e.progEff).toBeNull();
+    expect(e.mainline).toBeNull();
+  });
+
   it("converts AC/EX flow GPM→L/min and PR pressure PSI→kPa at parse time", () => {
     const e = parseRow(row("06:00:00", "FS", "RD", "FS", "AC=47", "EX=46", "PR=63"));
     expect(e.pairs.AC.value).toBeCloseTo(177.9, 1); // 47 * 3.785
